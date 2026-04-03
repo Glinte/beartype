@@ -116,10 +116,10 @@ def get_func_code_object(
     # If this callable is *NOT* pure-Python...
     if func_codeobj is None:
         # Avoid circular import dependencies.
-        from beartype._util.func.utilfunctest import die_unless_func_codeobjable
+        from beartype._util.func.utilfunctest import die_as_func_not_codeobjable
 
         # Raise an exception.
-        die_unless_func_codeobjable(
+        die_as_func_not_codeobjable(
             func=func,
             exception_cls=exception_cls,
             exception_prefix=exception_prefix,
@@ -229,19 +229,25 @@ def get_func_code_object_or_none(
 
     # If this object is a pure-Python function...
     #
-    # Note that:
-    # * This test is intentionally a new "if" conditional rather than an
-    #   extension of the prior "elif" conditional. Doing so trivially unwraps
-    #   the pure-Python function encapsulated by a bound method descriptor.
-    # * This test intentionally leverages the standard "FunctionType"
-    #   class rather than our equivalent "beartype.cave.FunctionType" class to
-    #   avoid circular import issues.
+    # Note that this test is intentionally a new "if" conditional rather than an
+    # extension of the prior "elif" conditional. Doing so trivially unwraps
+    # the pure-Python function encapsulated by a bound method descriptor. \o/
     if isinstance(func, FunctionType):
-        # Return the code object of either:
-        # * If unwrapping this function, the lowest-level wrappee wrapped by
-        #   this function.
-        # * Else, this function as is.
-        func_codeobj = (unwrap_func_all(func) if is_unwrap else func).__code__  # type: ignore[attr-defined]
+        # If unwrapping this function...
+        if is_unwrap:
+            # Lower-level object wrapped by this function, which is *NOT*
+            # guaranteed to also be a pure-Python function.
+            func = unwrap_func_all(func)
+
+            # If this lower-level object is also a pure-Python function,
+            # return the code object of this function.
+            if isinstance(func, FunctionType):
+                func_codeobj = func.__code__
+            # Else, this lower-level object is *NOT* a pure-Python function.
+        # Else, this function is *NOT* being unwrapped. In this case, trivially
+        # return the code object of this function.
+        else:
+            func_codeobj = func.__code__
     # Else, this object is *NOT* a pure-Python function.
     #
     # If this object is a pure-Python generator, return this generator's code
@@ -267,47 +273,6 @@ def get_func_code_object_or_none(
     return func_codeobj
 
 # ....................{ GETTERS ~ attribute                }....................
-#FIXME: Unit test us up, please. *sigh*
-def get_code_object_basename(code_object: CallableCodeObjectType) -> str:
-    '''
-    Unqualified basename of the **physical lexical scope** (i.e., module, class,
-    callable) of the passed code object if that object is executed inside a
-    scope that physically exists *or* the string constant
-    :data:`beartype._data.func.datafunccodeobj.CODE_OBJECT_BASENAME_MODULE_OR_EVAL`
-    if that code object is executed dynamically in-memory outside such a scope.
-
-    Specifically, this getter returns:
-
-    * If the active Python interpreter targets Python >= 3.11, the value of the
-      ``co_qualname`` attribute defined on this code object.
-    * Else, the value of the ``co_name`` attribute defined on this code object.
-
-    Parameters
-    ----------
-    code_object : CallableCodeObjectType
-        Code object to introspect the absolute filename of.
-
-    Returns
-    -------
-    str
-         If this codeobjable has *no* code object and is thus *not* pure-Python.
-    '''
-    assert isinstance(code_object, CallableCodeObjectType), (
-        f'{repr(code_object)} not code object.')
-
-    # Return either...
-    return (
-        # If the active Python interpreter targets Python >= 3.11 and thus
-        # defines the "co_qualname" attribute on code objects, that attribute;
-        code_object.co_qualname  # type: ignore[attr-defined]
-        if IS_PYTHON_AT_LEAST_3_11 else
-        # Else, the active Python interpreter targets Python < 3.11 and thus
-        # does *NOT* defines the "co_qualname" attribute on code objects. In
-        # this case, the "co_name" attribute instead.
-        code_object.co_name
-    )
-
-
 #FIXME: Unit test us up, please. *sigh*
 def get_code_object_filename(
     code_object: CallableCodeObjectType) -> Optional[str]:
@@ -347,3 +312,75 @@ def get_code_object_filename(
     # *ALL* C-based builtins (e.g., len()) with code objects failing to provide
     # this metadata. Yes, this is awful. Yes, this is the Python ecosystem.
     return getattr(code_object, 'co_filename', None)
+
+# ....................{ GETTERS ~ attribute                }....................
+#FIXME: Unit test us up, please. *sigh*
+def get_code_object_basename(code_object: CallableCodeObjectType) -> str:
+    '''
+    Unqualified basename of the **physical lexical scope** (i.e., module, class,
+    callable) of the passed code object if that object is executed inside a
+    scope that physically exists *or* the string constant
+    :data:`beartype._data.func.datafunccodeobj.CODE_OBJECT_BASENAME_MODULE_OR_EVAL`
+    if that code object is executed dynamically in-memory outside such a scope.
+
+    Specifically, this getter returns:
+
+    * If the active Python interpreter targets Python >= 3.11, the value of the
+      ``co_qualname`` attribute defined on this code object.
+    * Else, the value of the ``co_name`` attribute defined on this code object.
+
+    Parameters
+    ----------
+    code_object : CallableCodeObjectType
+        Code object to introspect the absolute filename of.
+
+    Returns
+    -------
+    str
+        Unqualified basename of this code object.
+    '''
+    assert isinstance(code_object, CallableCodeObjectType), (
+        f'{repr(code_object)} not code object.')
+
+    # Return either...
+    return (
+        # If the active Python interpreter targets Python >= 3.11 and thus
+        # defines the "co_qualname" attribute on code objects, that attribute;
+        code_object.co_qualname  # type: ignore[attr-defined]
+        if IS_PYTHON_AT_LEAST_3_11 else
+        # Else, the active Python interpreter targets Python < 3.11 and thus
+        # does *NOT* defines the "co_qualname" attribute on code objects. In
+        # this case, the "co_name" attribute instead.
+        code_object.co_name
+    )
+
+
+#FIXME: Unit test us up, please. *sigh*
+def get_code_object_basename_last(code_object: CallableCodeObjectType) -> str:
+    '''
+    Last ``"."``-delimited component of the unqualified basename of the
+    **physical lexical scope** (i.e., module, class, callable) of the passed
+    code object if that object is executed inside a scope that physically exists
+    *or* the string constant
+    :data:`beartype._data.func.datafunccodeobj.CODE_OBJECT_BASENAME_MODULE_OR_EVAL`
+    if that code object is executed dynamically in-memory outside such a scope.
+
+    This getter unconditionally returns the value of the ``co_name`` attribute
+    defined on this code object.
+
+    Parameters
+    ----------
+    code_object : CallableCodeObjectType
+        Code object to introspect the absolute filename of.
+
+    Returns
+    -------
+    str
+        Last ``"."``-delimited component of the unqualified basename of this
+        code object.
+    '''
+    assert isinstance(code_object, CallableCodeObjectType), (
+        f'{repr(code_object)} not code object.')
+
+    # Tread trepidatiously, intrepid one-liner!
+    return code_object.co_name

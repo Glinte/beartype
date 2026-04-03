@@ -14,9 +14,9 @@ This private submodule is *not* intended for importation by downstream callers.
 '''
 
 # ....................{ IMPORTS                            }....................
-from beartype.roar import BeartypeDecorHintForwardRefException
-from beartype._check.forward.reference.fwdrefmake import (
-    make_forwardref_subbable_subtype)
+from beartype.roar import BeartypeDecorHintPep484ForwardRefStrException
+from beartype._check.forward.reference.fwdrefproxy import (
+    proxy_hint_pep484_ref_str_subbable)
 from beartype._check.forward.scope.fwdscopemake import (
     make_scope_forward_decor_meta)
 from beartype._check.metadata.call.callmetadecormin import (
@@ -30,12 +30,14 @@ from beartype._data.typing.datatypingport import Hint
 from beartype._util.func.utilfunctest import is_func_nested
 from beartype._util.module.utilmodget import get_object_module_name_or_none
 from beartype._util.text.utiltextansi import color_hint
-from beartype._util.text.utiltextlabel import label_callable
+from beartype._util.text.utiltextlabel import (
+    label_callable,
+    label_exception_traceback,
+)
 from beartype._util.utilobject import (
     get_object_basename_scoped,
     get_object_name,
 )
-from traceback import format_exc
 
 # ....................{ RESOLVERS ~ metadata               }....................
 #FIXME: Unit test us up, please.
@@ -45,7 +47,8 @@ def resolve_hint_pep484_ref_str_caller_external(
     conf: BeartypeConf,
 
     # Optional parameters.
-    exception_cls: TypeException = BeartypeDecorHintForwardRefException,
+    exception_cls: TypeException = (
+        BeartypeDecorHintPep484ForwardRefStrException),
     exception_prefix: str = '',
 ) -> Hint:
     '''
@@ -68,9 +71,9 @@ def resolve_hint_pep484_ref_str_caller_external(
     conf : BeartypeConf
         **Beartype configuration** (i.e., dataclass encapsulating all flags,
         options, settings, and other metadata configuring this resolution).
-    exception_cls : Type[Exception], default: BeartypeDecorHintForwardRefException
+    exception_cls : Type[Exception], default: BeartypeDecorHintPep484ForwardRefStrException
         Type of exception to be raised in the event of a fatal error. Defaults
-        to :exc:`.BeartypeDecorHintForwardRefException`.
+        to :exc:`.BeartypeDecorHintPep484ForwardRefStrException`.
     exception_prefix : str, default: ''
         Human-readable substring prefixing raised exception messages. Defaults
         to the empty string.
@@ -120,7 +123,8 @@ def resolve_hint_pep484_ref_str_decor_meta(
     hint: str,
 
     # Optional parameters.
-    exception_cls: TypeException = BeartypeDecorHintForwardRefException,
+    exception_cls: TypeException = (
+        BeartypeDecorHintPep484ForwardRefStrException),
     exception_prefix: str = '',
 ) -> Hint:
     '''
@@ -143,9 +147,9 @@ def resolve_hint_pep484_ref_str_decor_meta(
         decorated callable at the time that callable is subsequently called).
     hint : str
         Stringified forward reference type hint to be resolved.
-    exception_cls : Type[Exception], default: BeartypeDecorHintForwardRefException
+    exception_cls : Type[Exception], default: BeartypeDecorHintPep484ForwardRefStrException
         Type of exception to be raised in the event of a fatal error. Defaults
-        to :exc:`.BeartypeDecorHintForwardRefException`.
+        to :exc:`.BeartypeDecorHintPep484ForwardRefStrException`.
     exception_prefix : str, default: ''
         Human-readable substring prefixing raised exception messages. Defaults
         to the empty string.
@@ -369,8 +373,11 @@ def resolve_hint_pep484_ref_str_decor_meta(
             # Beartype-specific forward reference proxy deferring the detection
             # of this type until required by a runtime type-check performed
             # during some subsequent call to the currently decorated callable.
-            hint_resolved = make_forwardref_subbable_subtype(
-                hint_name=hint, scope_name=func_module_name)
+            hint_resolved = proxy_hint_pep484_ref_str_subbable(
+                scope_name=func_module_name,
+                hint_name=hint,
+                exception_prefix=exception_prefix,
+            )
 
             # Resolve this stringified forward reference to this proxy.
             return hint_resolved
@@ -446,7 +453,8 @@ def _resolve_hint_pep484_ref_str(
     scope_forward: LexicalScope,
 
     # Optional parameters.
-    exception_cls: TypeException = BeartypeDecorHintForwardRefException,
+    exception_cls: TypeException = (
+        BeartypeDecorHintPep484ForwardRefStrException),
     exception_prefix: str = '',
 ) -> Hint:
     '''
@@ -474,9 +482,9 @@ def _resolve_hint_pep484_ref_str(
         all attributes accessible to the lexical scope of the passed decorated
         callable where this scope comprises both the global scope and all local
         lexical scopes enclosing that type-checking call) of that call.
-    exception_cls : Type[Exception], default: BeartypeDecorHintForwardRefException
+    exception_cls : Type[Exception], default: BeartypeDecorHintPep484ForwardRefStrException
         Type of exception to be raised in the event of a fatal error. Defaults
-        to :exc:`.BeartypeDecorHintForwardRefException`.
+        to :exc:`.BeartypeDecorHintPep484ForwardRefStrException`.
     exception_prefix : str, default: ''
         Human-readable substring prefixing raised exception messages. Defaults
         to the empty string.
@@ -505,28 +513,29 @@ def _resolve_hint_pep484_ref_str(
     try:
         hint_resolved = eval(hint, scope_forward)
         # print(f'Resolved stringified type hint {repr(hint)} to {repr(hint_resolved)}...')
-    # If doing so failed for *ANY* reason whatsoever...
+    # If doing so fails for *ANY* reason whatsoever...
     except Exception as exception:
         assert isinstance(exception_cls, type), (
             f'{repr(exception_cls)} not exception class.')
         assert isinstance(exception_prefix, str), (
             f'{repr(exception_prefix)} not string.')
 
+        # Human-readable traceback formatted from this exception, indented to
+        # improve readability when embedded below.
+        exception_traceback = label_exception_traceback(exception)
+
         # Human-readable message to be raised.
         exception_message = (
             f'{exception_prefix}'
             f'PEP 484 stringified forward reference type hint '
             f'{color_hint(text=repr(hint), is_color=conf.is_color)} '
-            f'unresolvable, as attempting to dynamically resolve '
-            f'the target type hint referred to by '
-            f'this source forward reference raises:\n'
-            f'{format_exc()}'
+            f'unresolvable to its target referent:\n'
+            f'{exception_traceback}'
         )
 
         # If the beartype configuration associated with the decorated
         # callable enabled debugging, append debug-specific metadata to this
         # message.
-        # if True:
         if conf.is_debug:
             exception_message += (
                 f'\nComposite global and local scope enclosing this hint:\n\n'

@@ -4,10 +4,10 @@
 # See "LICENSE" for further details.
 
 '''
-Beartype **forward reference factory** unit tests.
+Beartype **forward reference proxy factory** unit tests.
 
 This submodule unit tests the
-:func:`beartype._check.forward.reference.fwdrefmake` submodule.
+:func:`beartype._check.forward.reference.fwdrefproxy` submodule.
 '''
 
 # ....................{ IMPORTS                            }....................
@@ -17,10 +17,10 @@ This submodule unit tests the
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # ....................{ TESTS                              }....................
-def test_make_forwardref_subbable_subtype() -> None:
+def test_proxy_hint_pep484_ref_str_subbable() -> None:
     '''
     Test the
-    :func:`beartype._check.forward.reference.fwdrefmake.make_forwardref_subbable_subtype`
+    :func:`beartype._check.forward.reference.fwdrefproxy.proxy_hint_pep484_ref_str_subbable`
     factory.
     '''
 
@@ -47,7 +47,11 @@ def test_make_forwardref_subbable_subtype() -> None:
         PACKAGE_NAME,
         SCOPE_NAME,
     )
-    from pytest import raises
+    from beartype_test._util.error.pyterrraise import raises_uncached
+
+    #FIXME: This should be warns_uncached() instead, except that doesn't exist
+    #yet and we're *WAY* too behind on @beartype 0.23.0. Ignore this for now!
+    from pytest import warns
 
     # ....................{ LOCALS                         }....................
     # Arbitrary instance of a subclass of that class.
@@ -68,10 +72,10 @@ def test_make_forwardref_subbable_subtype() -> None:
         f'{PACKAGE_NAME}.{MODULE_BASENAME}')
 
     # Assert that these proxies have the expected hint names.
-    assert FORWARDREF_ABSOLUTE.__name_beartype__ == CLASS_NAME
-    assert FORWARDREF_RELATIVE.__name_beartype__ == CLASS_BASENAME
-    assert FORWARDREF_MODULE_ABSOLUTE.__name_beartype__ == MODULE_NAME
-    assert FORWARDREF_MODULE_CLASS.__name_beartype__ == CLASS_NAME
+    assert FORWARDREF_ABSOLUTE.__hint_name_beartype__ == CLASS_NAME
+    assert FORWARDREF_RELATIVE.__hint_name_beartype__ == CLASS_BASENAME
+    assert FORWARDREF_MODULE_ABSOLUTE.__hint_name_beartype__ == MODULE_NAME
+    assert FORWARDREF_MODULE_CLASS.__hint_name_beartype__ == CLASS_NAME
 
     # Assert that these proxies have the expected scope names.
     assert FORWARDREF_ABSOLUTE.__scope_name_beartype__ == SCOPE_NAME
@@ -92,11 +96,16 @@ def test_make_forwardref_subbable_subtype() -> None:
     assert issubclass(Subclass, FORWARDREF_MODULE_CLASS)
 
     # ....................{ PASS ~ property                }....................
-    # Assert that this property of these forward reference proxies has the
-    # expected values.
-    assert FORWARDREF_ABSOLUTE.__type_beartype__ is Class
-    assert FORWARDREF_RELATIVE.__type_beartype__ is Class
-    assert FORWARDREF_MODULE_CLASS.__type_beartype__ is Class
+    # Assert that this property of these forward reference proxies all evaluates
+    # to the expected types.
+    assert FORWARDREF_ABSOLUTE.__resolved_type_beartype__ is Class
+    assert FORWARDREF_RELATIVE.__resolved_type_beartype__ is Class
+    assert FORWARDREF_MODULE_CLASS.__resolved_type_beartype__ is Class
+
+    # Assert that this property of these forward reference proxies all evaluates
+    # to the same expected types while also issuing non-fatal warnings.
+    with warns(DeprecationWarning):
+        assert FORWARDREF_ABSOLUTE.__type_beartype__ is Class
 
     # ....................{ PASS ~ repr                    }....................
     # Machine-readable representation of a forward reference proxy.
@@ -109,7 +118,7 @@ def test_make_forwardref_subbable_subtype() -> None:
         # Machine-readable representations of all class variables of all
         # unsubscripted forward reference proxies.
         repr(FORWARDREF_ABSOLUTE.__scope_name_beartype__),
-        repr(FORWARDREF_ABSOLUTE.__name_beartype__),
+        repr(FORWARDREF_ABSOLUTE.__hint_name_beartype__),
     )
 
     # Assert that this representation contains the expected substrings.
@@ -119,34 +128,34 @@ def test_make_forwardref_subbable_subtype() -> None:
     # ....................{ FAIL                           }....................
     # Assert that attempting to access an undefined dunder attribute of a
     # forward reference proxy raises the expected exception.
-    with raises(AttributeError):
+    with raises_uncached(AttributeError):
         FORWARDREF_ABSOLUTE.__the_beating_of_her_heart_was_heard_to_fill__
 
     # Assert that attempting to instantiate a forward reference proxy raises the
     # expected exception.
-    with raises(BeartypeDecorHintForwardRefException):
+    with raises_uncached(BeartypeDecorHintForwardRefException):
         FORWARDREF_ABSOLUTE()
 
     # Assert that attempting to validate a forward reference proxy to a module
     # as either an instance or subclass of a type raises the expected exception.
-    with raises(BeartypeCallHintForwardRefException):
+    with raises_uncached(BeartypeCallHintForwardRefException):
         isinstance(obj_subclass, FORWARDREF_MODULE_ABSOLUTE)
-    with raises(BeartypeCallHintForwardRefException):
+    with raises_uncached(BeartypeCallHintForwardRefException):
         issubclass(Subclass, FORWARDREF_MODULE_ABSOLUTE)
 
     # Assert that attempting to test an arbitrary object as an instance of a
     # circular forward reference proxy raises the expected exception.
-    with raises(BeartypeCallHintForwardRefException):
+    with raises_uncached(BeartypeCallHintForwardRefException):
         isinstance(obj_subclass, FORWARDREF_RELATIVE_CIRCULAR)
 
     # Assert that attempting to test an arbitrary type as a subclass of a
     # circular forward reference proxy raises the expected exception.
-    with raises(BeartypeCallHintForwardRefException):
+    with raises_uncached(BeartypeCallHintForwardRefException):
         issubclass(Subclass, FORWARDREF_RELATIVE_CIRCULAR)
 
     # Assert that attempting to test an undefined *NON-DUNDER* attribute of a
     # forward reference proxy raises the expected exception *AFTER* that same
     # forward reference proxy has already resolved its referent due to a prior
     # call to the isinstance() or issubclass() builtins against this proxy.
-    with raises(AttributeError):
+    with raises_uncached(AttributeError):
         FORWARDREF_MODULE_CLASS.and_buried_from_all_godlike_exercise

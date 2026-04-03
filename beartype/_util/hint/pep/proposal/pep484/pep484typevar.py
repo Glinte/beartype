@@ -14,13 +14,17 @@ This private submodule is *not* intended for importation by downstream callers.
 from beartype.roar import BeartypeDecorHintPep484TypeVarException
 from beartype.typing import TypeVar
 from beartype._data.kind.datakindiota import SENTINEL
-from beartype._data.typing.datatyping import TypeException
+from beartype._data.typing.datatyping import (
+    Pep649749Hintable,
+    TypeException,
+)
 from beartype._data.typing.datatypingport import (
     Hint,
     HintOrNone,
     TypeIs,
 )
-from beartype._util.cache.utilcachecall import callable_cached
+# from beartype._util.cache.utilcachecall import callable_cached
+from typing import Optional
 
 # ....................{ RAISERS                            }....................
 #FIXME: Unit test us up, please. *sigh*
@@ -148,9 +152,9 @@ def is_hint_pep484_typevar(hint: Hint) -> TypeIs[TypeVar]:  # pyright: ignore
 #        the current "hint_curr_meta.check_variable" instance variable.
 #
 #  Kinda fun, but *REALLY* non-trivial -- and probably no one cares. Guh!
-@callable_cached
 def get_hint_pep484_typevar_bounded_constraints_or_none(
     # Mandatory parameters.
+    hintable: Optional[Pep649749Hintable],
     hint: TypeVar,
 
     # Optional parameters.
@@ -172,6 +176,11 @@ def get_hint_pep484_typevar_bounded_constraints_or_none(
        caller to the :meth:`typing.TypeVar.__init__` call initializing this
        type variable), this getter returns that bound as is.
     #. Else, this getter returns the :data:`None` singleton.
+
+    This getter is intentionally *not* memoized (e.g., by the
+    ``callable_cached`` decorator). Why? Because the ``hintable`` parameter is
+    typically a module, type, or callable contextually depending on lexical
+    scope and thus effectively prohibiting memoization.
 
     Caveats
     -------
@@ -200,17 +209,21 @@ def get_hint_pep484_typevar_bounded_constraints_or_none(
     callables (edges) relating those objects. Runtime type-checkers have *no*
     analogous operations, due to runtime space and time constraints.
 
-    This getter is intentionally *not* memoized (e.g., by the
-    ``callable_cached`` decorator). If this type variable was parametrized by
-    one or more constraints, the :attr:`typing.Union` type hint factory already
-    caches these constraints; else, this getter performs no work. In any case,
-    this getter effectively performs to work.
-
     Parameters
     ----------
+    hintable : Optional[Pep649749Hintable]
+        **Hintable** (i.e., pure-Python module, type, or callable annotated by
+        this hint) to be passed as the optional ``owner`` parameter to the
+        low-level :func:`annotationlib.call_evaluate_function` function
+        underlying this high-level getter if any *or* :data:`None` otherwise
+        (e.g., if this hint was passed directly to either the
+        :func:`beartype.door.is_bearable` or
+        :func:`beartype.door.die_if_unbearable` functions and thus originates
+        from no hintable). A non-:data:`None` hintable is required to resolve
+        unquoted forward references transitively subscripting this hint.
     hint : object
-        :pep:`484`-compliant type variable to be inspected.
-    exception_prefix : str, optional
+        Type variable to be inspected.
+    exception_prefix : str, default: ''
         Human-readable label prefixing the representation of this object in the
         exception message. Defaults to the empty string.
 
@@ -231,11 +244,11 @@ def get_hint_pep484_typevar_bounded_constraints_or_none(
     '''
 
     # Avoid circular import dependencies.
-    from beartype._util.hint.pep.proposal.pep484604 import (
+    from beartype._util.hint.pep.proposal.pep484.pep484604union import (
         make_hint_pep484604_union)
-    from beartype._util.hint.pep.proposal.pep749 import (
-        get_hint_pep749_subhint_mandatory,
-        get_hint_pep749_subhint_optional,
+    from beartype._util.hint.pep.proposal.pep749.pep749evaluate import (
+        get_hint_pep749_evaluator_mandatory,
+        get_hint_pep749_evaluator_optional,
     )
 
     # If this hint is *NOT* a type variable, raise an exception.
@@ -247,10 +260,11 @@ def get_hint_pep484_typevar_bounded_constraints_or_none(
     hint_bounded_constraints: Hint = None
 
     # Tuple of the zero or more child hints constraining this type variable.
-    hint_constraints = get_hint_pep749_subhint_mandatory(
+    hint_constraints = get_hint_pep749_evaluator_mandatory(
+        hintable=hintable,
         hint=hint,  # pyright: ignore
-        subhint_name_dynamic='evaluate_constraints',
-        subhint_name_static='__constraints__',
+        evaluator_name_dynamic='evaluate_constraints',
+        evaluator_name_static='__constraints__',
         exception_cls=BeartypeDecorHintPep484TypeVarException,
         exception_prefix=exception_prefix,
     )
@@ -278,13 +292,14 @@ def get_hint_pep484_typevar_bounded_constraints_or_none(
         #   Ergo, a type variable bound to "None" would prevent that type
         #   variable from matching any hints other than "None". That type
         #   variable would thus be equivalent to "None", which is useless,
-        #   because "None" could (and should) just be used instead. PEP 484
-        #   thus treats "None" as an invalid bound synonymous with *NO* bound.
-        hint_bound = get_hint_pep749_subhint_optional(
+        #   because "None" could (and should) just be used instead. PEP 484 thus
+        #   treats "None" as an invalid bound synonymous with *NO* bound.
+        hint_bound = get_hint_pep749_evaluator_optional(
+            hintable=hintable,
             hint=hint,  # pyright: ignore
-            subhint_name_dynamic='evaluate_bound',
-            subhint_name_static='__bound__',
-            subhint_value_null=None,
+            evaluator_name_dynamic='evaluate_bound',
+            evaluator_name_static='__bound__',
+            evaluator_value_null=None,
             exception_cls=BeartypeDecorHintPep484TypeVarException,
             exception_prefix=exception_prefix,
         )

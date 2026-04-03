@@ -26,26 +26,13 @@ from beartype._util.cls.pep.clspep557 import (
     is_pep557_dataclass_frozen,
 )
 from beartype._util.cls.utilclsset import set_type_attr
-from beartype._util.hint.pep.proposal.pep649 import (
-    get_pep649_hintable_annotations)
+from beartype._util.hint.pep.proposal.pep749.pep649749annotate import (
+    get_hintable_pep649749_annotations)
 from beartype._util.hint.pep.utilpepsign import get_hint_pep_sign_or_none
 from beartype._util.utilobject import get_object_type_name
 
 # ....................{ DECORATORS                         }....................
-#FIXME: As a mandatory prerequisite *BEFORE* integrating this into the @beartype
-#codebase, we first need to:
-#* Generalize both is_bearable() and die_if_unbearable() to support quoted
-#  relative forward references. As always, the algorithm should iteratively
-#  search up the callstack for the first stack frame residing *OUTSIDE*
-#  @beartype. Actually... that doesn't suffice. Third-party frameworks
-#  leveraging @beartype could themselves be consuming other third-party type
-#  hints originating from users. Deciding where exactly those type hints were
-#  originally defined is *PROBABLY* infeasible in the general case. So, we
-#  really do need to iteratively search up the entire call stack before raising
-#  an exception. It's fine. Just do it. The alternative is broken badness.
 #FIXME: Unit test against all possible dataclass edge cases, including:
-#* Quoted relative forward references (e.g., "list['MuhUndefinedType']"). This
-#  works, but we still need to test it. *shrug*
 #* "typing.Self". We're *NOT* passing "cls_stack" to either the is_bearable() or
 #  die_if_unbearable() functions, because those functions currently fail to
 #  accept an optional "cls_stack" parameter. We should probably generalize both
@@ -183,7 +170,7 @@ def beartype_pep557_dataclass(
     # Unsanified (i.e., original) dictionary mapping from the name of each
     # possible field of this dataclass to the possibly insane type hint
     # annotating that field *AFTER* resolving all PEP 563-postponed type hints.
-    attr_name_to_hint_insane = get_pep649_hintable_annotations(datacls)
+    attr_name_to_hint_insane = get_hintable_pep649749_annotations(datacls)
 
     # Sanified (i.e., sanitized) dictionary mapping from the name of each
     # guaranteable field of this dataclass to the ostensibly sane type hint

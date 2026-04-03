@@ -14,29 +14,25 @@ This private submodule is *not* intended for importation by downstream callers.
 
 # ....................{ IMPORTS                            }....................
 from beartype._check.checkmake import (
-    PITH_KIND_FUNC_RETURN,
     make_code_raiser_func_pith_check,
     make_code_raiser_func_pep484_noreturn_check,
 )
 from beartype._check.convert.convmain import sanify_hint_root_func
+from beartype._check.metadata.call.callmetadecor import (
+    BeartypeCallDecorMeta,
+    prefix_decor_meta_callable_return,
+)
 from beartype._check.metadata.hint.hintsane import HINT_SANE_IGNORABLE
-from beartype._check.metadata.call.callmetadecor import BeartypeCallDecorMeta
+from beartype._data.code.func.datacodefuncwrap import CODE_CALL_CHECKED_format
 from beartype._data.code.pep.datacodepep484 import PEP484_CODE_CHECK_NORETURN
 from beartype._data.error.dataerrmagic import EXCEPTION_PLACEHOLDER
-from beartype._data.func.datafuncarg import (
-    ARG_NAME_RETURN,
-    ARG_NAME_RETURN_REPR,
-)
+from beartype._data.func.datafuncarg import ARG_NAME_RETURN
 from beartype._data.kind.datakindiota import SENTINEL
 from beartype._data.typing.datatyping import LexicalScope
 from beartype._data.typing.datatypingport import Hint
-from beartype._data.code.func.datacodefuncwrap import CODE_CALL_CHECKED_format
-from beartype._decor._nontype._wrap._wraputil import (
-    unmemoize_func_pith_check_expr)
 from beartype._util.error.utilerrraise import reraise_exception_placeholder
 from beartype._util.error.utilerrwarn import reissue_warnings_placeholder
 from beartype._util.kind.maplike.utilmapset import update_mapping
-from beartype._util.text.utiltextprefix import prefix_callable_return
 from typing import NoReturn
 from warnings import catch_warnings
 
@@ -145,12 +141,11 @@ def code_check_return(decor_meta: BeartypeCallDecorMeta) -> str:
                     func_call_prefix=decor_meta.func_wrapper_code_call_prefix)
 
                 # Code snippet handling the previously generated violation by
-                # either raising that violation as a fatal exception or emitting
-                # that violation as a non-fatal warning.
-                (
-                    code_noreturn_violation,
-                    func_scope,
-                ) = make_code_raiser_func_pep484_noreturn_check(decor_meta.conf)
+                # either raising that violation as a fatal exception *OR*
+                # emitting that violation as a non-fatal warning.
+                code_noreturn_violation, func_scope = (
+                    make_code_raiser_func_pep484_noreturn_check(
+                        decor_meta.conf))
 
                 # Full code snippet to be returned.
                 func_wrapper_code = (
@@ -163,13 +158,13 @@ def code_check_return(decor_meta: BeartypeCallDecorMeta) -> str:
                 #
                 # Note that this memoized code factory requires parameters to be
                 # passed positionally for efficiency.
-                pith_check_expr, func_scope = make_code_raiser_func_pith_check(
-                    decor_meta, hint_sane, PITH_KIND_FUNC_RETURN)
-
-                # Unmemoize this snippet against this return.
-                code_return_check = unmemoize_func_pith_check_expr(
-                    pith_check_expr=pith_check_expr,
-                    pith_repr=ARG_NAME_RETURN_REPR,
+                (
+                    code_return_check,
+                    func_scope,
+                ) = make_code_raiser_func_pith_check(
+                    decor_meta=decor_meta,
+                    hint_sane=hint_sane,
+                    pith_name=ARG_NAME_RETURN,
                 )
 
                 # Code snippets prefixing and suffixing the type-checking of
@@ -198,10 +193,7 @@ def code_check_return(decor_meta: BeartypeCallDecorMeta) -> str:
         if warnings_issued:
             reissue_warnings_placeholder(
                 warnings=warnings_issued,
-                target_str=prefix_callable_return(
-                    func=decor_meta.func_wrappee,
-                    is_color=decor_meta.conf.is_color,
-                ),
+                target_str=prefix_decor_meta_callable_return(decor_meta),
             )
         # Else, *NO* warnings were issued.
     # If any exception was raised, reraise this exception with each placeholder
@@ -210,17 +202,14 @@ def code_check_return(decor_meta: BeartypeCallDecorMeta) -> str:
     except Exception as exception:
         reraise_exception_placeholder(
             exception=exception,
-            target_str=prefix_callable_return(
-                func=decor_meta.func_wrappee,
-                is_color=decor_meta.conf.is_color,
-            ),
+            target_str=prefix_decor_meta_callable_return(decor_meta)
         )
 
     # ..................{ RETURN                             }..................
     # If a local scope is required to type-check this return, merge this scope
     # into the local scope currently required by the current wrapper function.
     if func_scope:
-        update_mapping(decor_meta.func_wrapper_scope, func_scope)
+        update_mapping(decor_meta.func_wrapper_locals, func_scope)
     # Else, *NO* local scope is required to type-check this return.
 
     # Return this code.

@@ -28,6 +28,7 @@ from ast import (
 from beartype._cave._cavefast import (
     CallableCodeObjectType,
     FunctionType,
+    HintPep484749RefObjectType,
     HintPep604Type,
     HintPep612ParamSpecType,
     HintPep646TypeVarTupleType,
@@ -49,6 +50,7 @@ from collections.abc import (
     Collection,
     Iterable,
     Iterator,
+    Mapping,
     Set,
 )
 from importlib.abc import PathEntryFinder
@@ -60,9 +62,7 @@ from types import (
 )
 from typing import (
     Any,
-    ForwardRef,
     Literal,
-    Mapping,
     TypeVar,
     Union,
 )
@@ -70,7 +70,7 @@ from typing import (
 #FIXME: Doesn't seem to help. mypy 0.19.0 appears to busted, sadly. We sigh.
 # # If a static type-checker is type-checking us, import circular imports. Ugh!
 # if TYPE_CHECKING:
-#     from beartype._check.forward.reference.fwdrefabc import (
+#     from beartype._check.forward.reference._fwdrefabc import (
 #         BeartypeForwardRefABC)
 # # Else, Python is running us. Bless ye, Python. Bless ye.
 
@@ -152,9 +152,7 @@ PEP-compliant type hint matching any callable in a manner explicitly matching
 all possible callable signatures.
 '''
 
-# ....................{ PEP 484 ~ typevar : early          }....................
-# Type variables required by subsequent type hints below.
-
+# ....................{ BEARTYPE ~ decorator               }....................
 BeartypeableT = TypeVar(
     'BeartypeableT',
     # The @beartype decorator decorates objects that are either...
@@ -205,6 +203,31 @@ checkers (e.g., :mod:`mypy`) and type-aware IDEs (e.g., VSCode) that the
   signatures as passed callables.
 * Class hierarchies by preserving passed classes with respect to inheritance,
   including metaclasses and method-resolution orders (MRO) of those classes.
+'''
+
+
+BeartypeConfedDecorator = Callable[[BeartypeableT], BeartypeableT]
+'''
+PEP-compliant type hint matching a **configured beartype decorator** (i.e.,
+closure created and returned from the :func:`beartype.beartype` decorator when
+passed a beartype configuration via the optional ``conf`` parameter rather than
+an arbitrary object to be decorated via the optional ``obj`` parameter).
+'''
+
+
+# Note that this hint *MUST* be defined as an obsolete PEP 484-compliant old
+# union rather than a PEP 604-compliant new union to avoid static type-checker
+# complaints resembling:
+#     beartype/_decor/decormain.py:106: error: Variable
+#         "beartype._data.typing.datatyping.BeartypeReturn" is not valid as a
+#         type  [valid-type]
+#     beartype/_decor/decormain.py:106: note: See
+#         https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
+BeartypeReturn = Union[BeartypeableT, BeartypeConfedDecorator]
+'''
+:pep:`484`-compliant type hint matching any possible value returned by any
+invocation of the :func:`beartype.beartype` decorator, including calls to that
+decorator in both configuration and decoration modes.
 '''
 
 # ....................{ CALLABLE                           }....................
@@ -276,35 +299,10 @@ objects underlying pure-Python callables) *or* the :data:`None` singleton.
 This hint specifically matches the value of:
 
 * The low-level
-  :attr:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
+  :attr:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
   class variable.
 * All optional ``func_local_parent_codeobj_weakref`` parameters accepted by
   higher-level functions distributed throughout the codebase.
-'''
-
-# ....................{ CALLABLE ~ decorator               }....................
-BeartypeConfedDecorator = Callable[[BeartypeableT], BeartypeableT]
-'''
-PEP-compliant type hint matching a **configured beartype decorator** (i.e.,
-closure created and returned from the :func:`beartype.beartype` decorator when
-passed a beartype configuration via the optional ``conf`` parameter rather than
-an arbitrary object to be decorated via the optional ``obj`` parameter).
-'''
-
-
-# Note that this hint *MUST* be defined as an obsolete PEP 484-compliant old
-# union rather than a PEP 604-compliant new union to avoid static type-checker
-# complaints resembling:
-#     beartype/_decor/decormain.py:106: error: Variable
-#         "beartype._data.typing.datatyping.BeartypeReturn" is not valid as a
-#         type  [valid-type]
-#     beartype/_decor/decormain.py:106: note: See
-#         https://mypy.readthedocs.io/en/stable/common_issues.html#variables-vs-type-aliases
-BeartypeReturn = Union[BeartypeableT, BeartypeConfedDecorator]
-'''
-PEP-compliant type hint matching any possible value returned by any invocation
-of the :func:`beartype.beartype` decorator, including calls to that decorator
-in both configuration and decoration modes.
 '''
 
 # ....................{ CALLABLE ~ descriptor              }....................
@@ -363,8 +361,16 @@ objects.
 # ....................{ DICT ~ str                         }....................
 DictStrToAny = dict[str, Any]
 '''
-PEP-compliant type hint matching a dictionary mapping from strings to arbitrary
-objects.
+:pep:`585`-compliant type hint matching a dictionary mapping from strings to
+arbitrary objects.
+'''
+
+
+LexicalScope = DictStrToAny
+'''
+:pep:`585`-compliant type hint matching a **lexical scope** (i.e., dictionary
+mapping from the relative unqualified name to value of each locally or globally
+scoped attribute accessible to a callable or class).
 '''
 
 
@@ -385,34 +391,6 @@ ChainMapStrToAny = ChainMap[str, Any]
 '''
 PEP-compliant type hint matching a chain map mapping from strings to arbitrary
 objects.
-'''
-
-# ....................{ CODE                               }....................
-LexicalScope = DictStrToAny
-'''
-PEP-compliant type hint matching a **lexical scope** (i.e., dictionary mapping
-from the relative unqualified name to value of each locally or globally scoped
-attribute accessible to a callable or class).
-'''
-
-
-CodeGenerated = tuple[str, LexicalScope]
-'''
-PEP-compliant type hint matching **generated code** (i.e., tuple containing a
-Python code snippet dynamically generated on-the-fly by the low-level private
-:func:`beartype._check.code.codemain.make_check_expr` code factory as well as
-metadata describing that code).
-
-This hint matches a 2-tuple ``(func_wrapper_code, func_wrapper_scope)``, where:
-
-* ``func_wrapper_code`` is a Python code snippet type-checking an arbitrary
-  object against this hint. For the common case of code generated for a
-  :func:`beartype.beartype`-decorated callable, this snippet type-checks a
-  previously localized parameter or return value against this hint.
-* ``func_wrapper_scope`` is the **type-checking wrapper parameter scope** (i.e.,
-  dictionary mapping from the name to default value of each hidden optional
-  parameter to be passed to the type-checking wrapper function dynamically
-  generated by :mod:`beartype` whose body embeds this code).
 '''
 
 # ....................{ ITERABLE                           }....................
@@ -612,20 +590,6 @@ the :func:`isinstance` and :func:`issubclass` builtins.
 '''
 
 
-IsBuiltinOrSubclassableTypes = type | TupleTypes | HintPep604Type
-'''
-PEP-compliant type hint matching any objects passable as the second parameter
-to the :func:`isinstance` and :func:`issubclass` builtins.
-
-Specifically, this hint matches either:
-
-* A single type.
-* A tuple of zero or more types.
-* A :pep:`604`-compliant **new union** (i.e., two or more types delimited by the
-  ``|`` operator under Python >= 3.10).
-'''
-
-
 SetOrTupleTypes = TupleTypes | AbstractSetTypes
 '''
 PEP-compliant type hint matching a set *or* tuple of zero or more types.
@@ -745,42 +709,6 @@ low-level strings possibly signifying pathnames *or* high-level :class:`Path`
 instances definitely encapsulating pathnames).
 '''
 
-# ....................{ PEP ~ 484 : forward reference      }....................
-# Type hints required to fully comply with PEP 484.
-
-HintPep484Ref = str | ForwardRef
-'''
-Union of all :pep:`484`--compliant **forward reference types** (i.e., classes of
-all forward reference objects).
-
-See Also
---------
-:data:`beartype._cave._cavefast.HintPep484RefTypes`
-    Further details.
-'''
-
-
-#FIXME: mypy used to type-check this properly. Pyright never did. But even mypy
-#1.19.0 no longer accepts this. Weird stuff. Oh, well... who cares, huh?
-BeartypeForwardRef = type[
-    'beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC']   # type: ignore[name-defined]
-'''
-PEP-compliant type hint matching a **forward reference proxy** (i.e., concrete
-subclass of the abstract
-:class:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC`
-superclass).
-'''
-
-
-BeartypeForwardRefArgs = tuple[
-    TupleTypes, str, str, FuncLocalParentCodeObjectWeakref]
-'''
-PEP-compliant type hint matching a **forward reference proxy argument list**
-(i.e., tuple of all parameters passed to each call of the low-level private
-:func:`beartype._check.forward.reference.fwdrefmake._make_forwardref_subtype`
-factory function, in the same order as positionally accepted by that function).
-'''
-
 # ....................{ PEP ~ 484 : tower                  }....................
 # Note that type unions are intentionally defined to preferably be PEP
 # 604-compliant (e.g., "float | int"). Why? Because obsolete PEP 484-compliant
@@ -801,7 +729,30 @@ Pep484TowerFloat = float | int
 (i.e., both floating-point numbers and integers).
 '''
 
+# ....................{ PEP ~ 3119                         }....................
+Pep3119Checkable = type | TupleTypes | HintPep604Type
+'''
+:pep:`604`-compliant type hint matching all :pep:`3119`-compliant **possible
+runtime-checkable objects** (i.e., passable as the second parameter to the
+:func:`isinstance` and :func:`issubclass` builtins, assuming those calls raise
+*no* exceptions from :pep:`3119`-compliant ``__instancecheck__()`` or
+``__subclasscheck__()`` dunder methods defined on relevant metaclasses),
+including:
+
+* A single type.
+* A tuple of zero or more types.
+* A :pep:`604`-compliant **new union** (i.e., two or more types delimited by the
+  ``|`` operator under Python >= 3.10).
+'''
+
 # ....................{ PEP ~ 484 : typevar                }....................
+S = TypeVar('S')
+'''
+**Unbound type variable** (i.e., matching *any* arbitrary type) locally bound to
+different types throughout the :mod:`beartype` codebase.
+'''
+
+
 T = TypeVar('T')
 '''
 **Unbound type variable** (i.e., matching *any* arbitrary type) locally bound to
@@ -836,7 +787,7 @@ TupleTypeVars = tuple[TypeVar, ...]
 '''
 
 # ....................{ PEP ~ (484|612|646)                }....................
-# Type hints required to fully comply with PEP 484, 612, and 646 -- the
+# Type hints required to fully comply with PEPs 484, 612, and 646 -- the
 # standards collectively covering type parameters.
 
 Pep484612646TypeArgPacked = (
@@ -886,23 +837,39 @@ pep:`612`-, or :pep:`646`-compliant **unpacked type parameters** (i.e.,
 specification, or :pep:`646`-compliant unpacked type variable tuples).
 '''
 
-# ....................{ PEP ~ 649                          }....................
-# Objects defining PEP 649-compliant __annotate__() dunder methods are either...
-Pep649Hintable = type | Callable | ModuleType
+# ....................{ PEP ~ (484|749)                    }....................
+# Type hints required to fully comply with PEPs 484 and 749 -- the standards
+# collectively covering forward references.
+
+HintPep484749Ref = str | HintPep484749RefObjectType
 '''
-:pep:`649`-compliant type hint matching any **hintable** (i.e., ideally
-pure-Python object defining the ``__annotations__`` dunder attribute as well as
-the :pep:`649`-compliant ``__annotate__`` dunder method if the active Python
-interpreter targets Python >= 3.14).
+Union of all :pep:`484`- and :pep:`749`-compliant **forward reference types**
+(i.e., classes of all forward reference objects).
+
+See Also
+--------
+:data:`beartype._cave._cavefast.HintPep484749RefTypes`
+    Further details.
+'''
+
+# ....................{ PEP ~ (649|749)                    }....................
+# Objects defining PEP 649- and 749-compliant __annotate__() dunder methods are
+# either...
+Pep649749Hintable = type | Callable | ModuleType
+'''
+:pep:`649`- and :pep:`749`-compliant type hint matching any **hintable** (i.e.,
+ideally pure-Python object defining the ``__annotations__`` dunder attribute as
+well as the :pep:`649`-compliant ``__annotate__`` dunder method if the active
+Python interpreter targets Python >= 3.14).
 '''
 
 
-Pep649HintableAnnotations = DictStrToAny
+Pep649749HintableAnnotations = DictStrToAny
 '''
-:pep:`649`-compliant type hint matching any **hintable annotations** (i.e.,
-dictionary mapping from the name of each annotated parameter or return of a
-callable *or* annotated variable of a class or module to the type hint
-annotating that parameter, return, or variable).
+:pep:`649`- and :pep:`749`-compliant type hint matching any **hintable
+annotations** (i.e., dictionary mapping from the name of each annotated
+parameter or return of a callable *or* annotated variable of a class or module
+to the type hint annotating that parameter, return, or variable).
 '''
 
 # ....................{ PEP ~ 695                          }....................

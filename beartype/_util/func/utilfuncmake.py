@@ -12,22 +12,20 @@ This private submodule is *not* intended for importation by downstream callers.
 
 # ....................{ IMPORTS                            }....................
 from beartype.roar._roarexc import _BeartypeUtilCallableException
-from beartype.typing import (
-    Callable,
-    Optional,
-)
 from beartype._data.typing.datatyping import (
     LexicalScope,
     TypeException,
 )
-from beartype._util.text.utiltextlabel import label_exception
+from beartype._util.text.utiltextlabel import label_exception_message
 from beartype._util.text.utiltextmunge import number_str_lines
 from beartype._util.utilobject import get_object_name
+from collections.abc import Callable
 from functools import update_wrapper
 from linecache import cache as linecache_cache  # type: ignore[attr-defined]
+from typing import Optional
 from weakref import finalize
 
-# ....................{ MAKERS                             }....................
+# ....................{ FACTORIES                          }....................
 def make_func(
     # Mandatory arguments.
     func_name: str,
@@ -147,7 +145,7 @@ def make_func(
     assert func_name, 'Parameter "func_name" empty.'
     assert func_code, 'Parameter "func_code" empty.'
     assert func_label is None or func_labeller is None, (
-        f'Parameters "func_label" and "func_labeller" both non-"None".')
+        'Parameters "func_label" and "func_labeller" both non-"None".')
 
     # Default all unpassed parameters.
     if func_globals is None:
@@ -291,7 +289,7 @@ def make_func(
         raise exception_cls(
             f'{func_label or func_labeller()} '  # type: ignore[misc]
             f'unparseable, as @beartype generated invalid code raising:\n'
-            f'\t{label_exception(exception)}\n\n'
+            f'\t{label_exception_message(exception)}\n\n'
             f'{number_str_lines(func_code)}'
         ) from exception
 
@@ -371,6 +369,15 @@ def make_func(
 
     # Return that function.
     return func
+
+# ....................{ FACTORIES ~ method                 }....................
+#FIXME: Preserved in the likelihood that we'll want a bound method factory again
+#at some point. *sigh*
+#from beartype._cave._cavefast import FunctionType
+#def make_method_bound(
+#    func: FunctionType, obj: object) -> Callable:
+#    assert isinstance(method_unbound, FunctionType)
+#    return func.__get__(obj, type(obj))
 
 # ....................{ COPIERS                            }....................
 #FIXME: Consider excising. Although awesome, this is no longer needed.

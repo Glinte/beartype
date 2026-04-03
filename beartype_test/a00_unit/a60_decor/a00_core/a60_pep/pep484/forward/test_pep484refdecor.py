@@ -17,6 +17,7 @@ typically have yet to be defined).
 # WARNING: To raise human-readable test errors, avoid importing from
 # package-specific submodules at module scope.
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+from beartype_test._util.mark.pytskip import skip_if_python_version_less_than
 
 # ....................{ TESTS                              }....................
 def test_pep484_ref_decor_data() -> None:
@@ -48,7 +49,7 @@ def test_pep484_ref_decor_data() -> None:
         the_woods_are_lovely,
         winding_among_the_springs,
     )
-    from pytest import raises
+    from beartype_test._util.error.pyterrraise import raises_uncached
 
     # ..................{ LOCALS                             }..................
     # Objects passed below to exercise forward references.
@@ -66,6 +67,16 @@ def test_pep484_ref_decor_data() -> None:
     ]
     rugged_and_dark = WithSluggishSurge()
 
+    # 3-tuple of closures and classes nested in this callable.
+    (to_stop_without, to_watch_his_woods, WhoseWoodsTheseAreIThinkIKnow) = (
+        between_the_woods_and_frozen_lake())
+
+    # Objects passed below to exercise closure-relative forward references.
+    my_little_horse = WhoseWoodsTheseAreIThinkIKnow(
+        'My little horse must think it queer')
+    a_farmhouse_near = WhoseWoodsTheseAreIThinkIKnow(
+        'To stop without a farmhouse near')
+
     # ..................{ PASS                               }..................
     # Assert these forward-referencing callables return the expected values.
     assert a_little_shallop(with_burning_smoke) is with_burning_smoke
@@ -78,6 +89,14 @@ def test_pep484_ref_decor_data() -> None:
         TheDarkestEveningOfTheYear)
     assert rugged_and_dark.or_where_the_secret_caves() is rugged_and_dark
     assert winding_among_the_springs(rugged_and_dark) is rugged_and_dark
+
+    # Assert these forward-referencing closures return the expected values.
+    assert to_stop_without(my_little_horse) == my_little_horse
+    assert to_watch_his_woods(a_farmhouse_near) == a_farmhouse_near
+    assert to_watch_his_woods(True) is True
+    assert to_watch_his_woods(
+        len('Up to the zenith,—hieroglyphics old')) == (
+        len('Up to the zenith,—hieroglyphics old'))
 
     # ..................{ PASS ~ container                   }..................
     # Assert that instantiating a sequence containing valid items satisfying its
@@ -93,27 +112,22 @@ def test_pep484_ref_decor_data() -> None:
     # Assert that calling a method violating its return annotated as a 2-tuple
     # of type variables whose bounds are expressed as PEP-compliant relative
     # forward references to the same class raises the expected violation.
-    with raises(BeartypeCallHintReturnViolation):
+    with raises_uncached(BeartypeCallHintReturnViolation):
         BeforeTheHurricane().in_a_silver_vision_floats()
+
+    # Assert that calling a closure whose parameter is annotated as a
+    # PEP-compliant closure-relative forward reference to a type subsequently
+    # defined local to that closure when passed a parameter *NOT* an instance of
+    # that type raises the expected violation.
+    with raises_uncached(BeartypeCallHintParamViolation):
+        to_stop_without("Which sages and keen-ey'd astrologers")
+    with raises_uncached(BeartypeCallHintParamViolation):
+        to_watch_his_woods('Then living on the earth, with labouring thought')
 
     # Assert that instantiating a custom sequence containing invalid items
     # violating its annotations raises the expected exception.
-    with raises(BeartypeCallHintParamViolation):
+    with raises_uncached(BeartypeCallHintParamViolation):
         AllHisBulkAnAgony(('Crept gradual, from the feet unto the crown,',))
-
-    # ..................{ NESTED                             }..................
-    # 3-tuple of closures and classes nested in this callable.
-    (to_stop_without, to_watch_his_woods, WhoseWoodsTheseAreIThinkIKnow) = (
-        between_the_woods_and_frozen_lake())
-
-    # Objects passed below to exercise nested forward references.
-    MY_LITTLE_HORSE = WhoseWoodsTheseAreIThinkIKnow(
-        'My little horse must think it queer')
-    STOP = WhoseWoodsTheseAreIThinkIKnow('To stop without a farmhouse near')
-
-    # Assert these forward-referencing closures return the expected values.
-    assert to_stop_without(MY_LITTLE_HORSE) == MY_LITTLE_HORSE
-    assert to_watch_his_woods(STOP) == STOP
 
 # ....................{ TESTS ~ absolute : type : nonnested}....................
 def test_pep484_ref_decor_absolute() -> None:
@@ -130,7 +144,7 @@ def test_pep484_ref_decor_absolute() -> None:
         BeartypeCallHintForwardRefException,
         BeartypeCallHintParamViolation,
     )
-    from beartype_test._util.pytroar import raises_uncached
+    from beartype_test._util.error.pyterrraise import raises_uncached
 
     # ..................{ LOCALS                             }..................
     # Dates between which the Sisters of Battle must have been established.
@@ -230,7 +244,7 @@ def test_pep484_ref_decor_relative_type_nested() -> None:
     # Defer test-specific imports.
     from beartype import beartype
     from beartype.roar import BeartypeCallHintParamViolation
-    from beartype_test._util.pytroar import raises_uncached
+    from beartype_test._util.error.pyterrraise import raises_uncached
 
     # ..................{ CLASSES                            }..................
     @beartype
@@ -330,6 +344,56 @@ def test_pep484_ref_decor_relative_type_nested() -> None:
     with raises_uncached(BeartypeCallHintParamViolation):
         accept_list_vast_and_muscular([LikeALitheSerpent(),])
 
+# ....................{ TESTS ~ pep : 695                  }....................
+@skip_if_python_version_less_than('3.12.0')
+def test_pep484_ref_decor_pep695() -> None:
+    '''
+    Test :func:`beartype.beartype`-decorated callables accepting one or more
+    parameters annotated by :pep:`484`-compliant stringified forward reference
+    type hints referring to :pep:`695`-compliant type parameter scopes if the
+    active Python interpreter targets Python >= 3.12 and thus supports
+    :pep:`695` *or* reduce to a noop otherwise.
+    '''
+
+    # ..................{ IMPORTS                            }..................
+    # Defer test-specific imports.
+    from beartype_test.a00_unit.data.pep.pep484.forward.data_pep484ref_decor_pep695 import (
+        suddenly_on,
+        the_glancing_spheres,
+    )
+
+    # ..................{ PASS                               }..................
+    # Assert that calling this PEP 695-parametrized closure factory with valid
+    # parameters returns the expected closure.
+    WHEREON_HE_RODE = "Suddenly on the ocean's chilly streams."
+    planet_orb_of_fire = suddenly_on(WHEREON_HE_RODE)
+    assert callable(planet_orb_of_fire)
+    assert planet_orb_of_fire() is WHEREON_HE_RODE
+
+    # Assert that calling a callable decorated by a PEP 695-parametrized
+    # decorator with valid parameters returns the expected string.
+    CIRCLES_AND_ARCS = 'Circles, and arcs, and broad-belting colure,'
+    assert the_glancing_spheres(CIRCLES_AND_ARCS, 25) == (
+        f'{CIRCLES_AND_ARCS} {25}')
+
+# ....................{ TESTS ~ pep : 749                  }....................
+@skip_if_python_version_less_than('3.14.0')
+def test_pep484_ref_decor_pep749() -> None:
+    '''
+    Test :func:`beartype.beartype`-decorated callables accepting one or more
+    parameters annotated by invalid forward reference type hints in both
+    :pep:`484`-compliant stringified *and* :pep:`749`-compliant object-oriented
+    form if the active Python interpreter targets Python >= 3.14 and thus
+    supports :pep:`749` *or* reduce to a noop otherwise.
+    '''
+
+    # ..................{ IMPORTS                            }..................
+    # Defer test-specific imports.
+    #
+    # Note that importing this data submodule suffices to perform this test.
+    from beartype_test.a00_unit.data.pep.pep484.forward import (
+        data_pep484ref_decor_pep749)
+
 # ....................{ TESTS ~ fail                       }....................
 def test_pep484_ref_decor_fail() -> None:
     '''
@@ -342,7 +406,7 @@ def test_pep484_ref_decor_fail() -> None:
     # Defer test-specific imports.
     from beartype import beartype
     from beartype.roar import BeartypeDecorHintForwardRefException
-    from beartype_test._util.pytroar import raises_uncached
+    from beartype_test._util.error.pyterrraise import raises_uncached
 
     # ..................{ CALLABLES                          }..................
     def of_oceans(mountainous_waste: 'ToMutualWar'):
@@ -417,9 +481,12 @@ def test_pep484_ref_call_fail() -> None:
     # ..................{ IMPORTS                            }..................
     # Defer test-specific imports.
     from beartype import beartype
-    from beartype.roar import BeartypeCallHintForwardRefException
+    from beartype.roar import (
+        BeartypeCallHintForwardRefException,
+        BeartypeCallHintParamViolation,
+    )
     from beartype.typing import Union
-    from beartype_test._util.pytroar import raises_uncached
+    from beartype_test._util.error.pyterrraise import raises_uncached
 
     # ..................{ LOCALS                             }..................
     # PEP 484-compliant stringified absolute forward reference referring to a
@@ -491,19 +558,12 @@ def test_pep484_ref_call_fail() -> None:
         return and_ages_hence
 
     # ..................{ FAIL                               }..................
-    # Assert that calling these callables annotated by relative forward
-    # references referring to non-existent types raise *NO* exceptions. Why?
-    # Because detecting this edge case is highly non-trivial, @beartype
-    # currently reduces unresolved relative forward references annotating
-    # locally defined callables to the ignorable "object" superclass.
-    assert yet_knowing_how_way('And that has made all the difference.') == (
-        'And that has made all the difference.')
-    assert somewhere_ages('I doubted if I should ever come back.') == (
-        'I doubted if I should ever come back.')
-
-    # ..................{ FAIL                               }..................
     # Assert that calling these callables raise the expected exceptions.
     with raises_uncached(BeartypeCallHintForwardRefException):
         the_road('Two roads diverged in a wood, and I—')
     with raises_uncached(BeartypeCallHintForwardRefException):
         in_leaves_no_step('I took the one less traveled by,')
+    with raises_uncached(BeartypeCallHintParamViolation):
+        yet_knowing_how_way('And that has made all the difference.')
+    with raises_uncached(BeartypeCallHintParamViolation):
+        somewhere_ages('I doubted if I should ever come back.')

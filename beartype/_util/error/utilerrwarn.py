@@ -12,11 +12,6 @@ This private submodule is *not* intended for importation by downstream callers.
 '''
 
 # ....................{ IMPORTS                            }....................
-from beartype.typing import (
-    Any,
-    Iterable,
-    Iterator,
-)
 from beartype._data.error.dataerrmagic import EXCEPTION_PLACEHOLDER
 from beartype._data.typing.datatyping import TypeWarning
 from beartype._util.error.utilerrtest import is_exception_message_str
@@ -25,8 +20,12 @@ from beartype._util.py.utilpyversion import (
     IS_PYTHON_AT_LEAST_3_12,
 )
 from beartype._util.text.utiltextmunge import uppercase_str_char_first
-from collections.abc import Iterable as IterableABC
+from collections.abc import (
+    Iterable,
+    Iterator,
+)
 from contextlib import contextmanager
+from typing import Any
 from warnings import (
     WarningMessage,
     catch_warnings,
@@ -69,7 +68,7 @@ def warnings_ignored() -> Iterator[None]:
 # ....................{ WARNERS                            }....................
 # If the active Python interpreter targets Python >= 3.12, the standard
 # warnings.warn() function supports the optional "skip_file_prefixes" parameter
-# critical for emitting more useful warnings. In this case, define the
+# critical for emitting more useful warnings. In this case, define our
 # issue_warning() warner to pass that parameter.
 if IS_PYTHON_AT_LEAST_3_12:
     # ....................{ IMPORTS                        }....................
@@ -78,7 +77,15 @@ if IS_PYTHON_AT_LEAST_3_12:
     from os.path import dirname
 
     # ....................{ WARNERS                        }....................
-    def issue_warning(cls: TypeWarning, message: str) -> None:
+    def issue_warning(
+        # Mandatory parameters.
+        message: str,
+
+        #FIXME: Rename to "warning_cls", please. *sigh*
+        # Optional parameters.
+        cls: TypeWarning = UserWarning,
+    ) -> None:
+
         # The warning you gave us is surely our last!
         warn(message, cls, skip_file_prefixes=_ISSUE_WARNING_IGNORE_DIRNAMES)  # type: ignore[call-overload]
         # warn(message, cls)  # type: ignore[call-overload]
@@ -98,9 +105,16 @@ if IS_PYTHON_AT_LEAST_3_12:
     substantially more useful and readable warnings for external callers.
     '''
 # Else, the active Python interpreter targets Python < 3.12. In this case,
-# define the issue_warning() warner to avoid passing that parameter.
+# define our issue_warning() warner to avoid passing that parameter.
 else:
-    def issue_warning(cls: TypeWarning, message: str) -> None:
+    def issue_warning(
+        # Mandatory parameters.
+        message: str,
+
+        # Optional parameters.
+        cls: TypeWarning = UserWarning,
+    ) -> None:
+
         # Time to cry your tears! Now cry!
         warn(message, cls)
 
@@ -120,12 +134,64 @@ issue_warning.__doc__ = (
 
     Parameters
     ----------
-    cls: Type[Warning]
-        Type of warning to be issued.
     message: str
         Human-readable warning message to be issued.
+    cls: type[Warning], default: UserWarning
+        Type of warning to be issued. Defaults to the builtin
+        :exc:`.UserWarning` type.
+
+    Warns
+    -----
+    cls
+        Unconditionally.
     '''
 )
+
+# ....................{ WARNERS ~ deprecation              }....................
+#FIXME: Unit test us up, please. *sigh*
+def issue_deprecation(
+    # Mandatory parameters.
+    attr_name_deprecated: str,
+    attr_name_nondeprecated: str,
+
+    # Optional parameters.
+    warning_cls: TypeWarning = DeprecationWarning,
+) -> None:
+    '''
+    Issue (i.e., emit) a non-fatal deprecation warning of the passed type
+    describing the :mod:`beartype`-specific deprecation of the passed deprecated
+    attribute by the passed equivalent non-deprecated attribute.
+
+    Parameters
+    ----------
+    attr_name_deprecated : str
+        Fully-qualified name of the deprecated attribute.
+    attr_name_nondeprecated : str
+        Fully-qualified name of the equivalent non-deprecated attribute.
+    warning_cls: type[Warning], default: DeprecationWarning
+        Type of warning to be issued. Defaults to the builtin
+        :exc:`.DeprecationWarning` type.
+
+    Warns
+    -----
+    warning_cls
+        Unconditionally.
+    '''
+    assert isinstance(attr_name_deprecated, str), (
+        f'{repr(attr_name_deprecated)} not string.')
+    assert isinstance(attr_name_nondeprecated, str), (
+        f'{repr(attr_name_nondeprecated)} not string.')
+
+    # Warning message to be issued below.
+    warning_message = (
+        f'Deprecated attribute "{attr_name_deprecated}" '
+        f'scheduled for removal under a future beartype release. '
+        f'Please globally replace all references to this attribute with its '
+        f'non-deprecated equivalent "{attr_name_nondeprecated}".'
+    )
+
+    # Issue this warning.
+    issue_warning(message=warning_message, cls=warning_cls)
 
 # ....................{ REWARNERS                          }....................
 def reissue_warnings_placeholder(
@@ -170,8 +236,7 @@ def reissue_warnings_placeholder(
     https://stackoverflow.com/a/77516994/2809027
         StackOverflow answer strongly inspiring this implementation.
     '''
-    assert isinstance(warnings, IterableABC), (
-        f'{repr(warnings)} not iterable.')
+    assert isinstance(warnings, Iterable), f'{repr(warnings)} not iterable.'
     assert isinstance(source_str, str), f'{repr(source_str)} not string.'
     assert isinstance(target_str, str), f'{repr(target_str)} not string.'
 

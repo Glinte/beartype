@@ -38,6 +38,7 @@ requiring those imports. Until resolved, that subpackage is considered tainted.
 # than merely "from argparse import ArgumentParser").
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+import enum as _enum
 import functools as _functools
 import numbers as _numbers
 import re as _re
@@ -48,6 +49,7 @@ from beartype.roar import BeartypeCallUnavailableTypeException
 from beartype._cave._caveabc import BoolType
 from beartype._util.py.utilpyversion import (
     IS_PYTHON_AT_LEAST_3_14,
+    IS_PYTHON_AT_MOST_3_13,
     IS_PYTHON_AT_LEAST_3_13,
     IS_PYTHON_AT_LEAST_3_12,
     IS_PYTHON_AT_LEAST_3_11,
@@ -75,7 +77,6 @@ from io import IOBase as _IOBase
 from typing import (
     TYPE_CHECKING,
     Any,
-    ForwardRef as _ForwardRef,
 )
 from weakref import (
     ProxyTypes as _WeakrefProxyTypes,
@@ -1064,28 +1065,6 @@ that enumeration's type and should be directly referenced as such: e.g.,
    ...     return str(superlative).lower()
 '''
 
-# ....................{ TYPES ~ hint : pep : 484           }....................
-HintPep484RefTypes: tuple[type, ...] = (str, _ForwardRef)
-'''
-Tuple union of all :pep:`484`-compliant **forward reference type hint types**
-(i.e., types of all type hints encapsulating references to other objects that
-typically have yet to be defined).
-
-Specifically, this union contains:
-
-* :class:`str`, the type of all forward reference objects implicitly preserved
-  by all :pep:`585`-compliant type hint factories when subscripted by a string.
-* :class:`._ForwardRef`, the type of all forward reference objects implicitly
-  created by all :mod:`typing` type hint factories when subscripted by a string.
-
-While :pep:`585`-compliant type hint factories preserve string-based forward
-references as is, :mod:`typing` type hint factories coerce string-based forward
-references into higher-level objects encapsulating those strings. The latter
-approach is the demonstrably wrong approach, because encapsulating strings only
-harms space and time complexity at runtime with *no* concomitant benefits. As is
-often the case, :pep:`585` has the right of it.
-'''
-
 # ....................{ TYPES ~ hint : pep : 585           }....................
 # If this submodule is currently being statically type-checked by a pure static
 # type-checker, ignore false positives complaining that this type is not a type.
@@ -1156,6 +1135,21 @@ objects permissible as the items of new unions), including:
   union ``list | None``).
 * The C-based type of all subscripted generics (e.g., the type of the first item
   in the new union ``list[dict[str, int]] | None``).
+'''
+
+# ....................{ TYPES ~ hint : pep : 3119          }....................
+Pep3119CheckableTypes = (type, tuple, HintPep604Type)
+'''
+Tuple of all :pep:`3119`-compliant **possible runtime-checkable types** (i.e.,
+types of objects passable as the second parameter to the :func:`isinstance` and
+:func:`issubclass` builtins, assuming those calls raise *no* exceptions from
+:pep:`3119`-compliant ``__instancecheck__()`` or ``__subclasscheck__()`` dunder
+methods defined on relevant metaclasses), including the types of:
+
+* A single type.
+* A tuple of zero or more types.
+* A :pep:`604`-compliant **new union** (i.e., two or more types delimited by the
+  ``|`` operator under Python >= 3.10).
 '''
 
 # ....................{ TYPES ~ hint : pep : 612           }....................
@@ -1272,16 +1266,7 @@ Tuple of all **packed type parameters types** (i.e., types of
 specifications, and :pep:`646`-compliant type variable tuples).
 '''
 
-# ....................{ TYPES ~ hint : pep : 649           }....................
-#FIXME: After dropping Python 3.13 support, globally replace:
-#    # All imports like this...
-#    from beartype._cave._cavefast import Format
-#
-#    # ...with imports like this! \o/
-#    from annotationlib import Format
-#
-#Then remove *ALL* of the PEP 649-specific logic below.
-
+# ....................{ TYPES ~ hint : pep : 749           }....................
 # If either...
 if (
     # This submodule is currently being statically type-checked by a pure static
@@ -1292,21 +1277,83 @@ if (
 ):
     # Import the standard PEP 649-compliant "annotationlib.Format" enum defined
     # *ONLY* under Python >= 3.14.
-    from annotationlib import Format as Format  # type: ignore[import-not-found]
+    from annotationlib import Format as HintPep749RefFormat  # type: ignore[import-not-found]
+    # from annotationlib import Format as _Format  # type: ignore[import-not-found]
+
+    # HintPep749RefFormat = _Format
+    # '''
+    # Enumeration of all :pep:`749`-compliant **forward reference resolution
+    # formats** (i.e., valid values of the ``format`` parameter accepted by
+    # most callables declared in the standard :class:`annotationlib` module).
+    # '''
 # Else, this submodule is currently being imported at runtime under an active
 # Python interpreter targets that targets at most Python <= 3.13 and thus
 # fails to define the standard PEP 649-compliant "annotationlib.Format" enum. In
-# this case, define a placeholder enum declaring the same members.
+# this case, define a placeholder enum declaring the same members. Doing so
+# simplifies global-scoped logic throughout this codebase. *shrug*
 else:
-    import enum
-
     # For simplicity, copy-paste the *EXACT SAME* definition of this enum as
     # appears at the head of the standard "annotationlib" module.
-    class Format(enum.IntEnum):
+    class HintPep749RefFormat(_enum.IntEnum):
         VALUE = 1
         VALUE_WITH_FAKE_GLOBALS = 2
         FORWARDREF = 3
         STRING = 4
+
+# ....................{ TYPES ~ hint : pep : (484|749)     }....................
+# If either this submodule is currently being statically type-checked by a pure
+# static type-checker *OR* this interpreter targets at most Python <= 3.13 and
+# thus fails to support either PEPs 649 or 749...
+if TYPE_CHECKING or IS_PYTHON_AT_MOST_3_13:
+    # Import equivalent deprecated attributes from the standard "typing" module.
+    from typing import ForwardRef as _ForwardRef
+# Else, the active Python interpreter importing this submodule at runtime
+# targets Python >= 3.14 and thus supports both PEPs 649 and 749. In this case,
+# trivially import PEP 649- and 749-compliant attributes directly from the
+# standard "annotationlib" module first introduced by Python 3.14.
+else:
+    from annotationlib import ForwardRef as _ForwardRef
+
+
+#FIXME: Globally replace *ALL* usage of the deprecated "typing.ForwardRef" type
+#with this substantially safer type, please. *sigh*
+HintPep484749RefObjectType = _ForwardRef
+'''
+Type of all :pep:`484`- and :pep:`749`-compliant **object-oriented forward
+reference type hints** (i.e., pure-Python objects encapsulating all metadata
+required to dynamically resolve at runtime references to referent target type
+hints that typically have yet to be defined in some lexical scope).
+
+If the active Python interpreter targets:
+
+* Python >= 3.14, this is the non-deprecated :class:`annotationlib.ForwardRef`
+  type.
+* Python <= 3.13, this is the deprecated :class:`typing.ForwardRef` type.
+'''
+
+
+HintPep484749RefTypes: tuple[type, ...] = (str, HintPep484749RefObjectType)
+'''
+Tuple union of the types of all :pep:`484`- and :pep:`749`-compliant **forward
+reference type hints** (i.e., objects encapsulating references to other objects
+that typically have yet to be defined).
+
+Specifically, this union contains:
+
+* :class:`str`, the type of all :pep:`484`-compliant C-based forward reference
+  objects implicitly preserved by all :pep:`585`-compliant type hint factories
+  when subscripted by a string.
+* :class:`.HintPep484749RefObjectType`, the type of all :pep:`484`- and
+  :pep:`749`-compliant pure-Python forward reference objects implicitly created
+  by all :mod:`typing` type hint factories when subscripted by a string.
+
+While :pep:`585`-compliant type hint factories preserve string-based forward
+references as is, :mod:`typing` type hint factories coerce string-based forward
+references into higher-level objects encapsulating those strings. The latter
+approach is the demonstrably wrong approach, because encapsulating strings only
+harms space and time complexity at runtime with *no* concomitant benefits. As is
+often the case, :pep:`585` has the right of it.
+'''
 
 # ....................{ TYPES ~ hint : pep : 695           }....................
 # If this submodule is currently being statically type-checked by a pure static
@@ -1729,10 +1776,19 @@ pure-Python callables into C-based callables.
 '''
 
 
-CallableOrClassTypes = CallableTypes + (ClassType,)
-'''
-Tuple of all callable types as well as the type of all types.
-'''
+# If this submodule is currently being statically type-checked by a pure static
+# type-checker, ignore false positives erroneously reducing these types to the
+# union "object | Any". Why? No idea. Welcome to Mypy Hell. We hope you hate
+# your stay. We did. Misery loves company, everybody! Come! Be miserable...
+if TYPE_CHECKING:
+    CallableOrClassTypes = (FunctionType, ClassType,)
+# Else, this submodule is *NOT* currently being statically type-checked by a
+# pure static type-checker. In this case, define these types properly. *sigh*
+else:
+    CallableOrClassTypes = CallableTypes + (ClassType,)
+    '''
+    Tuple of all callable types as well as the type of all types.
+    '''
 
 
 CallableOrStrTypes = CallableTypes + (StrType,)

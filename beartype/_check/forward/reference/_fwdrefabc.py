@@ -14,12 +14,17 @@ This private submodule is *not* intended for importation by downstream callers.
 
 # ....................{ IMPORTS                            }....................
 from beartype.roar import BeartypeDecorHintForwardRefException
+from beartype._cave._cavefast import HintPep484749RefObjectType
+from beartype._data.cls.dataclsany import BeartypeAny
 from beartype._data.typing.datatyping import (
     FuncLocalParentCodeObjectWeakref,
     LexicalScope,
 )
-from beartype._check.forward.reference.fwdrefmeta import BeartypeForwardRefMeta
-from typing import NoReturn
+from beartype._check.forward.reference._fwdrefmeta import BeartypeForwardRefMeta
+from typing import (
+    NoReturn,
+    Optional,
+)
 
 # ....................{ SUPERCLASSES                       }....................
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -37,8 +42,8 @@ class BeartypeForwardRefABC(object, metaclass=BeartypeForwardRefMeta):
     '''
     Abstract base class (ABC) of all **forward reference proxy subclasses**
     (i.e., classes whose :class:`.BeartypeForwardRefMeta` metaclass defers the
-    resolution of :pep:`484`-compliant stringified forward reference type hints
-    referencing actual type hints that have yet to be defined).
+    resolution of forward reference type hints referencing type hints that have
+    yet to be defined in the lexical scopes of external callers).
 
     Caveats
     -------
@@ -54,7 +59,7 @@ class BeartypeForwardRefABC(object, metaclass=BeartypeForwardRefMeta):
     '''
 
     # ....................{ CLASS VARS ~ mandatory         }....................
-    __name_beartype__: str = None  # type: ignore[assignment]
+    __hint_name_beartype__: str = None  # type: ignore[assignment]
     '''
     Absolute (i.e., fully-qualified) or relative (i.e., unqualified) name of the
     type hint referenced by this forward reference subclass.
@@ -63,13 +68,55 @@ class BeartypeForwardRefABC(object, metaclass=BeartypeForwardRefMeta):
     debuggability in the event of developer error [read: us].
     '''
 
+
+    __exception_prefix_beartype__: str = 'Forward reference '
+    '''
+    Human-readable substring prefixing exception messages raised by methods
+    defined by this ABC, the metaclass of this ABC, and concrete subclasses of
+    this ABC.
+
+    Caveats
+    -------
+    **Callers are advised to call the**
+    :func:`beartype._check.forward.reference.fwdrefset.set_beartype_ref_proxies_exception_prefix`
+    **setter to overwrite both this and other defaults for this substring across
+    multiple forward reference proxies simultaneously with a more contextually
+    specific substring.** This substring temporarily defaults to a globally
+    reasonable substring until subsequently replaced with yet another temporary
+    default for each concrete subclass by
+    :func:`beartype._check.forward.reference.fwdrefproxy._proxy_hint_ref`.
+    However, both of these defaults are inappropriate for leaking to end users.
+    '''
+
     # ....................{ CLASS VARS ~ optional          }....................
-    __scope_name_beartype__: str = None  # type: ignore[assignment]
+    __scope_name_beartype__: Optional[str] = None
     '''
     Fully-qualified name of the lexical scope to which the type hint referenced
     by this forward reference subclass is relative if that type hint is relative
-    (i.e., if :attr:`__name_beartype__` is relative) *or* ignored otherwise
-    (i.e., if :attr:`__name_beartype__` is absolute).
+    (i.e., if :attr:`__hint_name_beartype__` is relative) *or* ignored otherwise
+    (i.e., if :attr:`__hint_name_beartype__` is absolute).
+
+    Caveats
+    -------
+    **Callers should not assume this class variable to be a non-empty string.**
+    Specifically, if this proxy encapsulates a:
+
+    * :pep:`484`-compliant stringified forward reference type hint, this name is
+      guaranteed to be a non-empty string.
+    * :pep:`749`-compliant object-oriented forward reference type hint, this
+      name is either a non-empty string *or* :data:`None` (depending on that
+      hint).
+    '''
+
+
+    __hint_pep749_ref_beartype__: Optional[HintPep484749RefObjectType] = None
+    '''
+    :pep:`749`-compliant **forward reference type hint** (i.e.,
+    higher-level pure-Python object-oriented :class:`annotationlib.ForwardRef`
+    object defining a dynamically resolvable reference referring to the
+    lower-level type hint encapsulated by this forward reference subclass) if
+    this subclass originates from such an object *or* :data:`None` otherwise
+    (i.e., if this subclass does *not* originate from such an object).
     '''
 
 
@@ -251,6 +298,13 @@ class BeartypeForwardRefABC(object, metaclass=BeartypeForwardRefMeta):
         )
 
     # ....................{ PRIVATE ~ testers              }....................
+    #FIXME: [SPEED] *INEFFICIENT*. These have *NO* reason to exist. They just
+    #uselessly introduce yet another layer of call indirection for no good
+    #reason. Instead:
+    #* Inline the body of these testers directly into the corresponding
+    #  __instancecheck__() and __subclasscheck__() dunder methods of our
+    #  metaclass.
+    #* Excise these testers. *sigh*
     @classmethod
     def __is_instance_beartype__(cls, obj: object) -> bool:
         '''
@@ -269,32 +323,131 @@ class BeartypeForwardRefABC(object, metaclass=BeartypeForwardRefMeta):
             class referred to by this forward reference subclass.
         '''
 
-        # Return true only if this object is an instance of the external class
-        # referenced by this forward reference.
-        return isinstance(obj, cls.__type_beartype__)  # type: ignore[arg-type]
+        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # CAUTION: Synchronize with the __is_subclass_beartype__() method below.
+        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # If the cls.__resolved_type_beartype__() property dynamically resolving the
+        # stringified forward reference underlying this proxy failed to do so by
+        # falling back to the beartype-specific private "BeartypeAny" type, do
+        # *NOT* simply return true only if the passed object is an instance of
+        # the external class referenced by this forward reference. Why? Because
+        # the "BeartypeAny" metaclass unconditionally returns true for all
+        # possible objects, inviting false negatives (i.e., failure to raise
+        # type-checking violations if this object is *NOT* an instance of that
+        # external class). Luckily, we can do better. Specifically...
+        if cls.__resolved_type_beartype__ is BeartypeAny:
+            #FIXME: Can we do even better? No idea. Maybe. Maybe not. We could
+            #also try doing something like testing:
+            #    get_object_name(obj) == f'__scope_name_beartype__.__hint_name_beartype__'
+            #
+            #Not sure if that's too restrictive and thus invites false
+            #positives, which would be even worse than false negatives. Guess
+            #we can just test that trivially and then discard the approach if it
+            #clearly fails in obvious cases? Right. Sounds half-sane, huh?
+
+            # Return true only if the unqualified basename of the type referred
+            # to by this forward reference is the same as that of this object.
+            # Since these two types share the same basename, this object is
+            # likelier to be an instance of the type referred to by this forward
+            # reference. The cautious reader will have noted the weasel word
+            # "likelier" doing heavy lifting here.
+            #
+            # Technically, this is merely an ad-hoc heuristic. It's trivial to
+            # concoct malicious (albeit thankfully unlikely) scenarios in which
+            # an object whose type shares the same basename as that of a
+            # forward reference is *NOT* an instance of the actual type referred
+            # to by that reference. It happens. It's also unlikely.
+            #
+            # Pragmatically, this heuristic has the beneficial effect of
+            # dramatically reducing the likelihood of false negatives in this
+            # edge case (which is good) *WITHOUT* any concomitant harmful effect
+            # like emitting false positives (which is also good). In other
+            # words, this heuristic has entirely good effects and is thus
+            # preferable to our only alternative (which is doing nothing).
+            #
+            # Why is this heuristic guaranteed to *NOT* emit false positives?
+            # Assume this heuristic emitted false positives. Then this heuristic
+            # invites erroneous type-checking violations by returning False when
+            # it should instead return True for some object "obj" and forward
+            # reference proxy "cls", implying:
+            #     obj_classname != cls.__hint_name_beartype__
+            #
+            # However, this heuristic should instead return True, implying that
+            # this object *MUST* be an instance of the type referred to by the
+            # stringified forward reference proxied by this proxy, implying:
+            #     obj_classname == cls.__hint_name_beartype__
+            #
+            # A contradiction! Ergo, this heuristic is guaranteed to *NOT* emit
+            # false positives. QED. \o/
+            return cls.__hint_name_beartype__ == obj.__class__.__name__
+        # Else, the cls.__resolved_type_beartype__() property dynamically resolving the
+        # stringified forward reference underlying this proxy succeeded in doing
+        # so. Ergo, the class returned by that property is trustworthy.
+
+        # This referent is possibly isinstanceable (i.e., passable as
+        # the second parameter to the isinstance() builtin, assuming
+        # that call raises *NO* exception from a PEP 3119-compliant
+        # __instancecheck__() dunder metaclass method) *AND*...
+        #
+        # Note that this test is intentionally inlined for efficiency. This
+        # dunder method is frequently called during performance-critical
+        # type-checking and thus on our "hot path."
+        # if isinstance(obj, Pep3119CheckableTypes):
+        #     # Return true only if the passed object is an instance of the external
+        #     # class referenced by this forward reference.
+        #     return isinstance(obj, cls.__resolved_type_beartype__)
+
+        # Return true only if the passed object is an instance of the external
+        # class referenced by this forward reference.
+        return isinstance(obj, cls.__resolved_type_beartype__)
 
 
     @classmethod
-    def __is_subclass_beartype__(cls, obj: object) -> bool:
+    def __is_subclass_beartype__(cls, subclass: type) -> bool:
         '''
         :data:`True` only if the passed object is a subclass of the external
         class referred to by this forward reference.
 
         Parameters
         ----------
-        obj : object
-            Arbitrary object to be tested.
+        subclass : type
+            Arbitrary type to be tested.
 
         Returns
         -------
         bool
             :data:`True` only if this object is a subclass of the external class
             referred to by this forward reference subclass.
+
+        Raises
+        ------
+        TypeError
+            If the passed object is *not* a type.
         '''
+
+        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # CAUTION: Synchronize with the __is_instance_beartype__() method above.
+        #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        # If the cls.__resolved_type_beartype__() property dynamically resolving the
+        # stringified forward reference underlying this proxy failed to do so by
+        # falling back to the beartype-specific private "BeartypeAny" type...
+        if cls.__resolved_type_beartype__ is BeartypeAny:
+            # If this object is *NOT* a type, raise the standard "TypeError"
+            # exception expected to be raised by the issubclass() builtin in
+            # this common edge case. To do so trivially, we intentionally
+            # masquerade as the root "object" superclass. *shrug*
+            issubclass(subclass, object)  # <-- weird python is worky python
+
+            # Return true only if the unqualified basename of the type referred
+            # to by this forward reference is the same as that of this object.
+            return cls.__hint_name_beartype__ == subclass.__name__
+        # Else, the cls.__resolved_type_beartype__() property dynamically resolving the
+        # stringified forward reference underlying this proxy succeeded in doing
+        # so. Ergo, the class returned by that property is trustworthy.
 
         # Return true only if this object is a subclass of the external class
         # referenced by this forward reference.
-        return issubclass(obj, cls.__type_beartype__)  # type: ignore[arg-type]
+        return issubclass(subclass, cls.__resolved_type_beartype__)
 
 # ....................{ SUPERCLASSES ~ subscription        }....................
 #FIXME: Unit test us up, please.
@@ -371,23 +524,20 @@ class BeartypeForwardRefSubbableABC(BeartypeForwardRefABC):
         '''
 
         # Avoid circular import dependencies.
-        from beartype._check.forward.reference.fwdrefmake import (
-            make_forwardref_subbed_subtype)
+        from beartype._check.forward.reference.fwdrefproxy import (
+            proxy_hint_pep484_ref_str_subbed)
 
-        # Subscripted forward reference to be returned.
-        forwardref_indexed_subtype = make_forwardref_subbed_subtype(
-            hint_name=cls.__name_beartype__,
-            scope_name=cls.__scope_name_beartype__,
+        # Create and return a new subscripted forward reference proxy extending
+        # this subscriptable forward reference proxy with the passed parameters.
+        return proxy_hint_pep484_ref_str_subbed(
+            scope_name=cls.__scope_name_beartype__,  # type: ignore[arg-type]
+            hint_name=cls.__hint_name_beartype__,
+            exception_prefix=cls.__exception_prefix_beartype__,
             func_local_parent_codeobj_weakref=(
                 cls.__func_local_parent_codeobj_weakref_beartype__),
+            args=args,
+            kwargs=kwargs,
         )
-
-        # Classify the arguments subscripting this forward reference.
-        forwardref_indexed_subtype.__args_beartype__ = args  # pyright: ignore[reportGeneralTypeIssues]
-        forwardref_indexed_subtype.__kwargs_beartype__ = kwargs  # pyright: ignore[reportGeneralTypeIssues]
-
-        # Return this subscripted forward reference.
-        return forwardref_indexed_subtype
 
 # ....................{ PRIVATE ~ tuples                   }....................
 BeartypeForwardRefSubbableABC_BASES = (BeartypeForwardRefSubbableABC,)

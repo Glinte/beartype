@@ -88,6 +88,15 @@ def callable_cached(func: CallableT) -> CallableT:
     memoize property methods; pragmatically, doing so would be sufficiently
     inefficient as to defeat the intention of memoizing in the first place.
 
+    **This decorator does not memoizes warnings issued by the decorated
+    callable.** This decorator *does* memoize exceptions raised by the decorated
+    callable. Ideally, this decorator would memoize both. Pragmatically, this
+    decorator *must* memoize exceptions. That's non-negotiable. However, this
+    decorator has *no* such compulsion to memoize warnings. Warnings are
+    non-fatal and commonly treated as an ignorable annoying nuisance by users.
+    Although memoizing warnings would be both feasible and trivial, doing so
+    would reduce the efficiency and thus point of this memoization.
+
     Efficiency
     ----------
     For efficiency, consider calling the decorated callable with only:
@@ -255,6 +264,11 @@ def callable_cached(func: CallableT) -> CallableT:
             #FIXME: If testing, emit a non-fatal warning or possibly even raise
             #a fatal exception. In either case, we want our test suite to notify
             #us about this.
+            # print(f'Callable {repr(func)} caching failed on args: {args}')
+            # from beartype._util.error.utilerrwarn import issue_warning
+            # issue_warning(
+            #     f'Callable {repr(func)} caching failed on args: {args}')
+
             return func(*args)
 
         # Return this value.
@@ -605,9 +619,9 @@ This prefix:
   filtering) to uniquely match and act upon these variables.
 * Is intentionally prefixed by double rather than single underscores (i.e.,
   ``"__"`` rather than ``"_"``), ensuring that our
-  :meth:`beartype._check.forward.reference.fwdrefmeta.BeartypeForwardRefMeta.__getattr__`
+  :meth:`beartype._check.forward.reference._fwdrefmeta.BeartypeForwardRefMeta.__getattr__`
   dunder method ignores the private instance variables cached by our cached
-  :meth:`beartype._check.forward.reference.fwdrefmeta.BeartypeForwardRefMeta.__type_beartype__`
+  :meth:`beartype._check.forward.reference._fwdrefmeta.BeartypeForwardRefMeta.__resolved_type_beartype__`
   property.
 '''
 

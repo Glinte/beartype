@@ -21,12 +21,12 @@ from beartype.roar import (
     BeartypeDecorHintPepException,
     BeartypeDecorParamNameException,
 )
-from beartype._check.checkmake import (
-    PITH_KIND_FUNC_ARG,
-    make_code_raiser_func_pith_check,
-)
+from beartype._check.checkmake import make_code_raiser_func_pith_check
 from beartype._check.convert.convmain import sanify_hint_root_func
-from beartype._check.metadata.call.callmetadecor import BeartypeCallDecorMeta
+from beartype._check.metadata.call.callmetadecor import (
+    BeartypeCallDecorMeta,
+    prefix_decor_meta_callable_arg_name,
+)
 from beartype._check.metadata.hint.hintsane import (
     HINT_SANE_IGNORABLE,
     HintSane,
@@ -40,8 +40,6 @@ from beartype._data.error.dataerrmagic import EXCEPTION_PLACEHOLDER
 from beartype._data.func.datafuncarg import ARG_NAME_RETURN
 from beartype._data.typing.datatyping import LexicalScope
 from beartype._data.typing.datatypingport import Hint
-from beartype._decor._nontype._wrap._wraputil import (
-    unmemoize_func_pith_check_expr)
 from beartype._util.error.utilerrraise import reraise_exception_placeholder
 from beartype._util.error.utilerrwarn import reissue_warnings_placeholder
 from beartype._util.func.arg.utilfuncargiter import (
@@ -49,9 +47,7 @@ from beartype._util.func.arg.utilfuncargiter import (
     iter_func_args,
 )
 from beartype._util.func.arg.utilfuncargtest import is_func_arg_variadic_keyword
-from beartype._util.hint.utilhintget import get_hint_repr
 from beartype._util.kind.maplike.utilmapset import update_mapping
-from beartype._util.text.utiltextprefix import prefix_callable_arg_name
 from beartype._data.kind.datakindiota import SENTINEL
 from collections.abc import MutableSet
 from typing import Optional
@@ -268,14 +264,8 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
                 # Else, this hint is unignorable.
 
                 #FIXME: Fundamentally unsafe and thus temporarily disabled *FOR
-                #THE MOMENT.* The issue is that our current implementation of
-                #the is_bearable() tester internally called by this function
-                #refuses to resolve relative forward references -- which is
-                #obviously awful. Ideally, that tester *ABSOLUTELY* should
-                #resolve relative forward references. Until it does, however,
-                #this is verboten dark magic that is unsafe in the general case.
-                #FIXME: Note that there exist even *MORE* edge cases, however:
-                #@dataclass fields, which violate typing semantics: e.g.,
+                #THE MOMENT.* @dataclass fields, for example, violate typing
+                #semantics: e.g.,
                 #    from dataclasses import dataclass, field
                 #    from typing import Dict
                 #
@@ -331,13 +321,13 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
                 #
                 # Note that this memoized code factory requires parameters to be
                 # passed positionally for efficiency.
-                pith_check_expr, func_scope = make_code_raiser_func_pith_check(
-                    decor_meta, hint_sane, PITH_KIND_FUNC_ARG)
-
-                # Unmemoize this snippet against the current parameter.
-                code_arg_check = unmemoize_func_pith_check_expr(
-                    pith_check_expr=pith_check_expr,
-                    pith_repr=get_hint_repr(arg_name),
+                (
+                    code_arg_check,
+                    func_scope,
+                ) = make_code_raiser_func_pith_check(
+                    decor_meta=decor_meta,
+                    hint_sane=hint_sane,
+                    pith_name=arg_name,
                 )
 
                 # Python code snippet localizing this parameter.
@@ -349,8 +339,7 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
 
                 # Merge the local scope required to check this parameter into
                 # the local scope required by the current wrapper function.
-                update_mapping(decor_meta.func_wrapper_scope, func_scope)
-
+                update_mapping(decor_meta.func_wrapper_locals, func_scope)
             # If one or more warnings were issued, reissue these warnings with
             # each placeholder substring (i.e., "EXCEPTION_PLACEHOLDER"
             # instance) replaced by a human-readable description of this
@@ -359,11 +348,8 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
                 # print(f'warnings_issued: {warnings_issued}')
                 reissue_warnings_placeholder(
                     warnings=warnings_issued,
-                    target_str=prefix_callable_arg_name(
-                        func=decor_meta.func_wrappee,
-                        arg_name=arg_name,
-                        is_color=decor_meta.conf.is_color,
-                    ),
+                    target_str=prefix_decor_meta_callable_arg_name(
+                        decor_meta=decor_meta, arg_name=arg_name),
                 )
             # Else, *NO* warnings were issued.
         # If any exception was raised, reraise this exception with each
@@ -376,13 +362,10 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
                 #FIXME: Embed the kind of parameter both here and above as well
                 #(e.g., "positional-only", "keyword-only", "variadic
                 #positional"), ideally by improving the existing
-                #prefix_callable_arg_name() function to introspect this kind from
-                #the callable code object.
-                target_str=prefix_callable_arg_name(
-                    func=decor_meta.func_wrappee,
-                    arg_name=arg_name,
-                    is_color=decor_meta.conf.is_color,
-                ),
+                #prefix_callable_arg_name() function to introspect this kind
+                #from the callable code object.
+                target_str=prefix_decor_meta_callable_arg_name(
+                    decor_meta=decor_meta, arg_name=arg_name),
             )
 
     # ..................{ RETURN                             }..................
@@ -390,7 +373,7 @@ def code_check_args(decor_meta: BeartypeCallDecorMeta) -> str:
     # the set of the names of all keywordable parameters to this wrapper
     # function needed to type-check that annotated variadic keyword parameter.
     if args_name_keywordable is not None:
-        decor_meta.func_wrapper_scope[ARG_NAME_ARGS_NAME_KEYWORDABLE] = (
+        decor_meta.func_wrapper_locals[ARG_NAME_ARGS_NAME_KEYWORDABLE] = (
             args_name_keywordable)
     # Else, that callable accepts *NO* annotated variadic parameter.
 

@@ -73,12 +73,12 @@ This private submodule is *not* intended for importation by downstream callers.
 #        # generalize to other scopes, for obscure reasons delineated here:
 #        #     https://stackoverflow.com/a/8028772/2809027
 #        if globals() is locals():
-#            globals()[__hint_pep695_forwardref_beartype__.__name_beartype__] =
+#            globals()[__hint_pep695_forwardref_beartype__.__hint_name_beartype__] =
 #                __hint_pep695_forwardref_beartype__)
 #        # Else, the current scope is *NOT* module scope. In this case,
 #        # fallback to an inefficient exec()-based solution.
 #        else:
-#            exec(f'{__hint_pep695_forwardref_beartype__.__name_beartype__} = __hint_pep695_forwardref_beartype__')
+#            exec(f'{__hint_pep695_forwardref_beartype__.__hint_name_beartype__} = __hint_pep695_forwardref_beartype__')
 #
 #    #FIXME: Technically, this *ONLY* needs to be done if the
 #    #iter_hint_pep695_unsubbed_forwardrefs() iterator returned something. *shrug*
@@ -104,26 +104,25 @@ This private submodule is *not* intended for importation by downstream callers.
 # ....................{ IMPORTS                            }....................
 from beartype.meta import URL_ISSUES
 from beartype.roar import BeartypeDecorHintPep695Exception
-from beartype.typing import (
-    Iterable,
-    Optional,
-)
 from beartype._cave._cavefast import (
     # HintGenericSubscriptedType,
     HintPep695TypeAlias,
     Pep695ParameterizableTypes,
 )
 from beartype._cave._cavemap import NoneTypeOr
-from beartype._check.forward.reference.fwdrefmake import (
-    make_forwardref_subbable_subtype)
-from beartype._check.forward.reference.fwdrefmeta import BeartypeForwardRefMeta
-from beartype._data.typing.datatypingport import Hint
+from beartype._check.forward.reference._fwdrefmeta import BeartypeForwardRefMeta
+from beartype._check.forward.reference.fwdrefproxy import (
+    proxy_hint_pep484_ref_str_subbable)
 from beartype._data.typing.datatyping import (
     LexicalScope,
     Pep695Parameterizable,
     TuplePep484612646TypeArgsPacked,
     TypeException,
     TypeStack,
+)
+from beartype._data.typing.datatypingport import (
+    Hint,
+    TypeIs,
 )
 from beartype._util.cache.pool.utilcachepoolinstance import (
     acquire_instance,
@@ -137,9 +136,52 @@ from beartype._util.py.utilpyversion import (
     IS_PYTHON_AT_MOST_3_11,
 )
 from beartype._data.kind.datakindiota import SENTINEL
-from collections.abc import Callable
+from collections.abc import (
+    Callable,
+    Iterable,
+)
+from typing import Optional
 
 # ....................{ TESTERS                            }....................
+#FIXME: Unit test us up, please. *sigh*
+def is_object_pep695_parameterizable(
+    obj: object) -> TypeIs[Pep695Parameterizable]:
+    '''
+    :data:`True` only if the passed object is :pep:`695`-compliant
+    **parameterizable** (i.e., object that may be parametrized by
+    :pep:`695`-compliant lists of one or more implicitly instantiated
+    :pep:`484`-compliant type variables, pep:`612`-compliant parameter
+    specifications, or :pep:`646`-compliant type variable tuples).
+
+    This tester returns :data:`True` if and only if the active Python
+    interpreter targets Python >= 3.12 (and thus supports :pep:` 695`) *and*
+    this object is either:
+
+    * A pure-Python class.
+    * A pure-Python function.
+    * A :pep:`695`-compliant type alias.
+
+    Parameters
+    ----------
+    obj : object
+        Object to be tested.
+
+    Returns
+    -------
+    bool
+        :data:`True` only if this object is :pep:`695`-parameterizable.
+    '''
+
+    # Return true only if...
+    return (
+        # The active Python interpreter targets Python >= 3.12 and thus supports
+        # PEP 695 *AND*...
+        IS_PYTHON_AT_LEAST_3_12 and
+        # This object is a PEP 695-compliant parametrizable.
+        isinstance(obj, Pep695ParameterizableTypes)
+    )
+
+
 def is_hint_pep695_subbed(hint: Hint) -> bool:
     '''
     :data:`True` only if the passed type hint is a :pep:`695`-compliant
@@ -342,9 +384,17 @@ def add_func_scope_hint_pep695_parameterizable_typeparams(
     assert isinstance(func_scope, dict), f'{repr(func_scope)} not dictionary.'
     # print(f'Updating PEP 695 parameterizable {repr(parameterizable)} scope {repr(func_scope)}...')
 
+    # ....................{ PREAMBLE                       }....................
+    # If the active Python interpreter targets Python <= 3.11, this interpreter
+    # fails to support PEP 695. In this case, silently reduce to a noop.
+    if IS_PYTHON_AT_MOST_3_11:
+        return
+    # Else, this interpreter targets Python >= 3.12. In this case, this
+    # interpreter supports PEP 695.
+
     # ....................{ IMPORTS                        }....................
     # Avoid circular import dependencies.
-    from beartype._util.hint.pep.proposal.pep484612646 import (
+    from beartype._util.hint.pep.proposal.pep646.pep484612646typevar import (
         get_hint_pep484612646_typearg_packed_name,
         is_hint_pep484612646_typearg_packed,
     )
@@ -357,6 +407,7 @@ def add_func_scope_hint_pep695_parameterizable_typeparams(
         exception_prefix=exception_prefix,
     )
     # print(f'Adding PEP 695 parameterizable {repr(parameterizable)} type parameters {repr(typeparams)}...')
+    # print(f'...to scope: {repr(func_scope)}')
 
     # ....................{ LOOP                           }....................
     # For each type parameter parametrizing this parameterizable...
@@ -448,7 +499,7 @@ def _get_hint_pep695_parameterizable_typeparams(
     '''
 
     # If this object is *NOT* parameterizable under PEP 695, raise an exception.
-    if not isinstance(parameterizable, Pep695ParameterizableTypes):
+    if not is_object_pep695_parameterizable(parameterizable):
         raise exception_cls(
             f'{exception_prefix}'
             f'{repr(parameterizable)} not PEP 695-parameterizable '
@@ -567,6 +618,10 @@ def resolve_func_scope_pep695(
     # If the decorated callable is a pure-Python function, this function
     # unconditionally supports PEP 695-compliant type parametrization under
     # Python >= 3.12. In this case...
+    #
+    # Note that the decorated callable is *ALMOST* always a pure-Python
+    # function. Ergo, there's no particular benefit to micro-optimizing this
+    # when the decorated callable is *NOT* a pure-Python function above.
     if is_func_python(func):
         # Composite all PEP 695-compliant type parameters parametrizing the
         # decorated callable into this forward scope.
@@ -597,7 +652,7 @@ def iter_hint_pep695_unsubbed_forwardrefs(
 ) -> Iterable[BeartypeForwardRefMeta]:
     '''
     Iteratively create and yield one **forward reference proxy** (i.e.,
-    :class:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC`
+    :class:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC`
     subclass) for each :pep:`484`-compliant stringified relative forward
     reference in the passed :pep:`695`-compliant **unsubscripted type alias**
     (i.e., object created by a statement of the form ``type {alias_name} =
@@ -771,8 +826,11 @@ def iter_hint_pep695_unsubbed_forwardrefs(
             # "hint_ref_name") is required here. Why? Subscription. A
             # stringified forward reference *CANNOT* be subscripted by arbitrary
             # child type hints; a forward reference proxy can be.
-            hint_ref = make_forwardref_subbable_subtype(
-                hint_name=hint_ref_name, scope_name=hint_module_name)
+            hint_ref = proxy_hint_pep484_ref_str_subbable(
+                scope_name=hint_module_name,
+                hint_name=hint_ref_name,
+                exception_prefix=exception_prefix,
+            )
 
             # Yield this forward reference proxy to the caller.
             yield hint_ref

@@ -35,10 +35,11 @@ This private submodule is *not* intended for importation by downstream callers.
 from beartype.roar import BeartypeDecorHintForwardRefException
 from beartype._cave._cavefast import WeakrefCallableType
 from beartype._cave._cavemap import NoneTypeOr
-from beartype._check.forward.reference.fwdrefabc import (
+from beartype._check.forward.reference._fwdrefabc import (
     BeartypeForwardRefSubbableABC)
-from beartype._check.forward.reference.fwdrefmake import (
-    make_forwardref_subbable_subtype)
+from beartype._check.forward.reference.fwdrefproxy import (
+    proxy_hint_pep484_ref_str_subbable)
+from beartype._data.py.databuiltins import BUILTIN_NAME_TO_VALUE
 from beartype._data.typing.datatyping import (
     FuncLocalParentCodeObjectWeakref,
     LexicalScope,
@@ -46,6 +47,7 @@ from beartype._data.typing.datatyping import (
 )
 from beartype._data.typing.datatypingport import Hint
 from beartype._util.func.utilfuncframe import (
+    GET_FRAME_CALLER_PARENT_PARENT,
     get_frame_or_none,
     get_frame_module_name_or_none,
     is_frame_beartype,
@@ -55,8 +57,10 @@ from beartype._util.func.utilfuncframe import (
 from beartype._util.kind.maplike.utilmapset import (
     remove_mapping_keys_except)
 from beartype._util.text.utiltextidentifier import die_unless_identifier
-from builtins import __dict__ as scope_builtins  # type: ignore[attr-defined]
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+    Optional,
+)
 
 # ....................{ SUPERCLASSES                       }....................
 class BeartypeForwardScope(LexicalScope):
@@ -103,13 +107,15 @@ class BeartypeForwardScope(LexicalScope):
 
     Attributes
     ----------
+    _exception_prefix : str
+        Human-readable substring prefixing raised exception messages.
     _func_local_parent_codeobj_weakref : FuncLocalParentCodeObjectWeakref
         Proxy weakly referring to the code object underlying the lexical
         scope of the parent module, type, or callable whose body locally
         defines the locally decorated callable if this forward reference
         proxy subtype proxies a stringified forward reference annotating a
         locally decorated callable *or* :data:`None` otherwise. See also the
-        :attr:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
+        :attr:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
         class variable docstring for further details.
     _hint_names_destringified : set[str]
         Set of the relative (i.e., unqualified) or absolute (i.e.,
@@ -122,9 +128,9 @@ class BeartypeForwardScope(LexicalScope):
         :meth:`minify method subsequently truncates this forward scope to this
         minimal subset of key-value pairs required to resolve the
         specific stringified type hints annotating the decorated callable.
-    _scope_name : str
-        Fully-qualified name of this forward scope. See the :meth:`__init__`
-        method for details.
+    _scope_name : Optional[str]
+        Possibly undefined fully-qualified name of this forward scope. See the
+        :meth:`__init__` method for details.
     '''
 
     # ..................{ CLASS VARIABLES                    }..................
@@ -133,6 +139,7 @@ class BeartypeForwardScope(LexicalScope):
     # called @beartype decorations. Slotting has been shown to reduce read and
     # write costs by approximately ~10%, which is non-trivial.
     __slots__ = (
+        '_exception_prefix',
         '_func_local_parent_codeobj_weakref',
         '_hint_names_destringified',
         '_scope_name',
@@ -141,22 +148,24 @@ class BeartypeForwardScope(LexicalScope):
     # Squelch false negatives from mypy. This is absurd. This is mypy. See:
     #     https://github.com/python/mypy/issues/5941
     if TYPE_CHECKING:
+        _exception_prefix: str
         _func_local_parent_codeobj_weakref: FuncLocalParentCodeObjectWeakref
         _hint_names_destringified: SetStrs
-        _scope_name: str
+        _scope_name: Optional[str]
 
     # ..................{ INITIALIZERS                       }..................
     def __init__(
         self,
 
         # Mandatory parameters.
-        scope_name: str,
+        scope_name: Optional[str],
+        exception_prefix: str,
 
         # Optional parameters.
         func_local_parent_codeobj_weakref: FuncLocalParentCodeObjectWeakref = (
             None),
         is_beartype_test_beartype: bool = False,
-        scope_dict: LexicalScope = scope_builtins,
+        scope_dict: LexicalScope = BUILTIN_NAME_TO_VALUE,
     ) -> None:
         '''
         Initialize this forward scope to the immutable dictionary of all
@@ -176,30 +185,37 @@ class BeartypeForwardScope(LexicalScope):
 
         Attributes
         ----------
-        scope_dict : LexicalScope, default: scope_builtins
-            Initial dictionary from which to populate this forward scope.
-            Defaults to the immutable dictionary of all **builtin attributes.**
-        scope_name : str
-            Fully-qualified name of this forward scope. For example:
+        scope_name : Optional[str]
+            Possibly undefined fully-qualified name of this forward scope. For
+            example:
 
             * ``"some_package.some_module"`` for a module scope (e.g., to
               resolve a global class or callable against this scope).
             * ``"some_package.some_module.SomeClass"`` for a class scope (e.g.,
               to resolve a nested class or callable against this scope).
-        func_local_parent_codeobj_weakref : FuncLocalParentCodeObjectWeakref
+        exception_prefix : str
+            Human-readable substring prefixing raised exception messages.
+        func_local_parent_codeobj_weakref : FuncLocalParentCodeObjectWeakref, default: None
             Proxy weakly referring to the code object underlying the lexical
             scope of the parent module, type, or callable whose body locally
             defines the locally decorated callable if this forward reference
             proxy subtype proxies a stringified forward reference annotating a
             locally decorated callable *or* :data:`None` otherwise. See also the
-            :attr:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
+            :attr:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC.__func_local_parent_codeobj_weakref_beartype__`
             class variable for further details.
+        scope_dict : LexicalScope, default: scope_builtins
+            Initial dictionary from which to populate this forward scope.
+            Defaults to the immutable dictionary of all **builtin attributes.**
 
         Raises
         ------
         BeartypeDecorHintForwardRefException
             If this scope name is *not* a valid Python attribute name.
         '''
+        assert isinstance(scope_name, NoneTypeOr[str]), (
+            f'{repr(scope_name)} neither string nor "None".')
+        assert isinstance(exception_prefix, str), (
+            f'{repr(exception_prefix)} not string.')
         assert isinstance(
             func_local_parent_codeobj_weakref,
             NoneTypeOr[WeakrefCallableType]
@@ -215,15 +231,19 @@ class BeartypeForwardScope(LexicalScope):
         # underlying this forward scope.
         super().__init__(scope_dict)
 
-        # If this scope name is syntactically invalid, raise an exception.
-        die_unless_identifier(
-            text=scope_name,
-            exception_cls=BeartypeDecorHintForwardRefException,
-            exception_prefix='Forward scope name ',
-        )
-        # Else, this scope name is syntactically valid.
+        # If this scope name is a syntactically invalid Python identifier, raise
+        # an exception.
+        if scope_name is not None:
+            die_unless_identifier(
+                text=scope_name,
+                exception_cls=BeartypeDecorHintForwardRefException,
+                exception_prefix=exception_prefix,
+            )
+        # Else, this scope name is either "None" *OR* a syntactically valid
+        # Python identifier.
 
         # Classify all passed parameters.
+        self._exception_prefix = exception_prefix
         self._func_local_parent_codeobj_weakref = (
             func_local_parent_codeobj_weakref)
         self._scope_name = scope_name
@@ -288,7 +308,7 @@ class BeartypeForwardScope(LexicalScope):
 
         This dunder method transparently replaces this unresolved type hint with
         a **forward reference proxy** (i.e., concrete subclass of the private
-        :class:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC`
+        :class:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC`
         abstract base class (ABC), which resolves this type hint on the first
         call to the :func:`isinstance` builtin whose second argument is that
         subclass).
@@ -355,14 +375,14 @@ class BeartypeForwardScope(LexicalScope):
         .. code-block:: python
 
            tbh = <forwardref__tracebackhide__(
-                     __name_beartype__='__tracebackhide__',
+                     __hint_name_beartype__='__tracebackhide__',
                      __scope_name_beartype__='beartype_test.a00_unit.data.pep.pep563.pep695.data_pep563_pep695'
            )>
 
         Since forward reference proxies are types *and* since types are callable
         (in the sense that "calling" a type instantiates that type), forward
         reference proxies are callable. However, they're not. The
-        :class:`beartype._check.forward.reference.fwdrefabc.BeartypeForwardRefABC`
+        :class:`beartype._check.forward.reference._fwdrefabc.BeartypeForwardRefABC`
         superclass prohibits instantiation by defining a ``__new__()`` dunder
         method that unconditionally raises exceptions, causing :mod:`pytest` to
         raise the same exceptions on attempting to ``return tbh(excinfo)``.
@@ -400,7 +420,7 @@ class BeartypeForwardScope(LexicalScope):
         die_unless_identifier(
             text=hint_name,
             exception_cls=BeartypeDecorHintForwardRefException,
-            exception_prefix='Forward reference ',
+            exception_prefix=self._exception_prefix,
         )
         # Else, this type hint name is syntactically valid.
 
@@ -434,7 +454,8 @@ class BeartypeForwardScope(LexicalScope):
         #
         # Ergo, ignoring the first three stack frames on the current call stack
         # by passing "ignore_frames=2" yields the expected parent parent caller.
-        frame_caller = get_frame_or_none(ignore_frames=2)
+        frame_caller = get_frame_or_none(
+            ignore_frames=GET_FRAME_CALLER_PARENT_PARENT)
 
         # If either...
         if (
@@ -473,7 +494,8 @@ class BeartypeForwardScope(LexicalScope):
         ):
             # Exception message to be raised.
             exception_message = (
-                f'Forward reference scope "{self._scope_name}" '
+                f'{self._exception_prefix}'
+                f'forward reference scope "{self._scope_name}" '
                 f'attribute "{hint_name}" '
             )
 
@@ -498,9 +520,19 @@ class BeartypeForwardScope(LexicalScope):
         # assumed to be trustworthy. Don't let us down, @beartype! Not again!
 
         # Forward reference proxy to be returned.
-        forwardref_subtype = make_forwardref_subbable_subtype(
+        #
+        # Note that the decoration-time "exception_prefix" parameter is
+        # intentionally *NOT* passed to this proxy factory. Why? Because that
+        # parameter is usually memoized *ONLY* during decoration (e.g., as
+        # "EXCEPTION_PLACEHOLDER"), which has *NO* relevance to the returned
+        # proxy intended to be called *AFTER* decoration at wrapper call-time.
+        # Logic elsewhere is expected to subsequently set the corresponding
+        # "__exception_prefix_beartype__" class variable on this proxy to a
+        # non-memoized string by calling the
+        # set_beartype_ref_proxies_exception_prefix() setter.
+        forwardref_subtype = proxy_hint_pep484_ref_str_subbable(
+            scope_name=self._scope_name,  # type: ignore[arg-type]
             hint_name=hint_name,
-            scope_name=self._scope_name,
             func_local_parent_codeobj_weakref=(
                 self._func_local_parent_codeobj_weakref),
         )
@@ -522,6 +554,7 @@ class BeartypeForwardScope(LexicalScope):
         super().clear()
 
         # Clear all subclass-specific instance variables as well.
+        self._exception_prefix = ''
         self._func_local_parent_codeobj_weakref = None
         self._hint_names_destringified.clear()
 
