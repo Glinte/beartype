@@ -24,9 +24,16 @@ def test_api_main_script_pass() -> None:
     # Defer test-specific imports.
     from beartype._util.py.utilpyinterpreter import (
         get_interpreter_command_words)
+    from beartype._util.os.utilostest import is_os_windows_vanilla
     from beartype_test._util.command.pytcmdrun import (
         run_command_forward_stderr_return_stdout)
     from beartype_test._util.path.pytpathtest import get_test_unit_data_dir
+    from pytest import skip
+
+    # If the current platform is vanilla Windows, skip this test. Shebang-based
+    # direct script execution is POSIX-centric and unsupported by CreateProcess.
+    if is_os_windows_vanilla():
+        skip('Shebang direct execution unsupported on vanilla Windows.')
 
     # ....................{ LOCALS                         }....................
     # Absolute filename of the passing script exercised by this test.
@@ -80,9 +87,16 @@ def test_api_main_script_shebang() -> None:
 
     # ....................{ IMPORTS                        }....................
     # Defer test-specific imports.
+    from beartype._util.os.utilostest import is_os_windows_vanilla
     from beartype_test._util.command.pytcmdrun import (
         run_command_forward_stderr_return_stdout)
     from beartype_test._util.path.pytpathtest import get_test_unit_data_dir
+    from pytest import skip
+
+    # If the current platform is vanilla Windows, skip this test. Shebang-based
+    # direct script execution is POSIX-centric and unsupported by CreateProcess.
+    if is_os_windows_vanilla():
+        skip('Shebang direct execution unsupported on vanilla Windows.')
 
     # ....................{ LOCALS                         }....................
     # Absolute filename of the passing script exercised by this test.
